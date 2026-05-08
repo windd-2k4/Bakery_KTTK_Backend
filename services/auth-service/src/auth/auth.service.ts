@@ -20,20 +20,27 @@ export class AuthService {
    */
   async register(dto: RegisterDto) {
     try {
+      console.log(`[AuthService] Processing registration for email: ${dto.email}`);
       const hashedPassword = await bcrypt.hash(dto.password, 12);
       
       let fullName = dto.fullName;
-      const first_name = (dto as any).first_name || dto.firstName;
-      const last_name = (dto as any).last_name || dto.lastName;
+      const firstName = dto.firstName;
+      const lastName = dto.lastName;
 
-      if (!fullName && first_name && last_name) {
-        fullName = `${first_name} ${last_name}`;
+      if (!fullName && firstName && lastName) {
+        fullName = `${firstName} ${lastName}`;
+      } else if (!fullName) {
+        fullName = dto.email.split('@')[0];
       }
 
       const user = await this.usersService.create({
-        ...dto,
-        fullName,
+        email: dto.email,
         password: hashedPassword,
+        firstName,
+        lastName,
+        fullName,
+        phone: dto.phone,
+        role: dto.role || 'CUSTOMER',
       });
       
       const { accessToken, refreshToken } = this.generateTokens(user);
@@ -45,7 +52,11 @@ export class AuthService {
         authenticated: true,
       };
     } catch (error) {
-      throw new InternalServerErrorException('Database error while creating user');
+      console.error('[AuthService] Lỗi khi lưu vào Database:', error);
+      if (error.code === '23505') {
+        throw new InternalServerErrorException('Email đã tồn tại trong hệ thống');
+      }
+      throw new InternalServerErrorException(error.message || 'Database error while creating user');
     }
   }
 
@@ -112,6 +123,45 @@ export class AuthService {
 
     // Xóa refreshToken khỏi database
     await this.usersService.updateRefreshToken(userId, null);
+  }
+
+  /**
+   * Refresh access token using refresh token
+   */
+  async refreshToken(refreshToken: string): Promise<AuthenticationResponse> {
+    try {
+      // Verify the refresh token
+      const payload = this.jwtService.verify(refreshToken);
+      
+      // Get user from database
+      const user = await this.usersService.findById(payload.sub);
+      
+      if (!user) {
+        throw new UnauthorizedException('User not found');
+      }
+
+      // Verify that the stored refresh token matches the provided one
+      if (user.refreshToken !== refreshToken) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
+      // Generate new tokens
+      const { accessToken, refreshToken: newRefreshToken } = this.generateTokens(user);
+      
+      // Save the new refresh token to database
+      await this.usersService.updateRefreshToken(user.id, newRefreshToken);
+      
+      return {
+        accessToken,
+        refreshToken: newRefreshToken,
+        authenticated: true,
+      };
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
   }
 
   private generateTokens(user: User) {

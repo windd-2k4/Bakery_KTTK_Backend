@@ -11,6 +11,7 @@ import { AuthenticationRequest } from './dto/authentication-request.dto';
 import { AuthenticationResponse } from './dto/authentication-response.dto';
 import { LogoutRequest } from './dto/logout-request.dto';
 import { RegisterDto } from './dto/register.dto';
+import { RefreshTokenRequest } from './dto/refresh-token-request.dto';
 import type { ApiResponse } from '../common/interfaces/response.interface';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
@@ -63,6 +64,25 @@ export class AuthManagementController {
       code: 200,
       message: 'Logout successful',
       data: { message: 'User logged out successfully' },
+    };
+  }
+
+  @Post('refresh')
+  async refresh(
+    @Body() refreshTokenRequest: RefreshTokenRequest,
+  ): Promise<ApiResponse<AuthenticationResponse>> {
+    if (!refreshTokenRequest.refreshToken) {
+      throw new BadRequestException('Refresh token is required');
+    }
+
+    const result = await this.authService.refreshToken(
+      refreshTokenRequest.refreshToken,
+    );
+
+    return {
+      code: 200,
+      message: 'Token refreshed successfully',
+      data: result,
     };
   }
 }

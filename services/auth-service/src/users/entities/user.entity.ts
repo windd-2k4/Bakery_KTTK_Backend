@@ -21,10 +21,10 @@ export class User {
   @Column({ type: 'enum', enum: ['CUSTOMER', 'ADMIN', 'BAKER'], default: 'CUSTOMER' })
   role: string;
  
-  @Column({ default: true })
+  @Column({ name: 'is_active', default: true })
   isActive: boolean;
  
-  @Column({ type: 'text', nullable: true })
+  @Column({ name: 'refresh_token', type: 'text', nullable: true })
   refreshToken: string | null;
  
   @CreateDateColumn({ name: 'created_at' })

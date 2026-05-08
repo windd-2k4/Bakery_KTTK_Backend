@@ -29,7 +29,7 @@ app.use(limiter);
 // Services (dev: localhost, prod: docker service names via env)
 const SERVICES = {
   product: process.env.PRODUCT_SERVICE_URL || 'http://localhost:3002',
-  auth: process.env.AUTH_SERVICE_URL || 'http://localhost:3001',
+  auth: process.env.AUTH_SERVICE_URL || 'http://localhost:3000',
 };
 
 // Health check
