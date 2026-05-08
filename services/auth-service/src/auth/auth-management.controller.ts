@@ -10,12 +10,30 @@ import { AuthService } from './auth.service';
 import { AuthenticationRequest } from './dto/authentication-request.dto';
 import { AuthenticationResponse } from './dto/authentication-response.dto';
 import { LogoutRequest } from './dto/logout-request.dto';
+import { RegisterDto } from './dto/register.dto';
 import type { ApiResponse } from '../common/interfaces/response.interface';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @Controller('auth-management/api/v1/auth')
 export class AuthManagementController {
   constructor(private readonly authService: AuthService) {}
+
+  @Post('register')
+  async register(
+    @Body() registerDto: RegisterDto,
+  ): Promise<ApiResponse<AuthenticationResponse>> {
+    if (!registerDto.email || !registerDto.password) {
+      throw new BadRequestException('Email and password are required');
+    }
+
+    const result = await this.authService.register(registerDto);
+
+    return {
+      code: 201,
+      message: 'User registered successfully',
+      data: result,
+    };
+  }
 
   @Post('log-in')
   async logIn(

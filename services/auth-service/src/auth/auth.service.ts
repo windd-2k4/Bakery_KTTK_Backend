@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, InternalServerErrorException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import * as bcrypt from 'bcryptjs';
@@ -19,12 +19,34 @@ export class AuthService {
    * Register new user (legacy endpoint)
    */
   async register(dto: RegisterDto) {
-    const hashedPassword = await bcrypt.hash(dto.password, 12);
-    const user = await this.usersService.create({
-      ...dto,
-      password: hashedPassword,
-    });
-    return this.generateTokens(user);
+    try {
+      const hashedPassword = await bcrypt.hash(dto.password, 12);
+      
+      let fullName = dto.fullName;
+      const first_name = (dto as any).first_name || dto.firstName;
+      const last_name = (dto as any).last_name || dto.lastName;
+
+      if (!fullName && first_name && last_name) {
+        fullName = `${first_name} ${last_name}`;
+      }
+
+      const user = await this.usersService.create({
+        ...dto,
+        fullName,
+        password: hashedPassword,
+      });
+      
+      const { accessToken, refreshToken } = this.generateTokens(user);
+      await this.usersService.updateRefreshToken(user.id, refreshToken);
+      
+      return {
+        accessToken,
+        refreshToken,
+        authenticated: true,
+      };
+    } catch (error) {
+      throw new InternalServerErrorException('Database error while creating user');
+    }
   }
 
   /**
@@ -35,7 +57,15 @@ export class AuthService {
     if (!user || !(await bcrypt.compare(dto.password, user.password))) {
       throw new UnauthorizedException('Invalid credentials');
     }
-    return this.generateTokens(user);
+    
+    const { accessToken, refreshToken } = this.generateTokens(user);
+    await this.usersService.updateRefreshToken(user.id, refreshToken);
+    
+    return {
+      accessToken,
+      refreshToken,
+      authenticated: true,
+    };
   }
 
   /**

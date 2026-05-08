@@ -14,12 +14,7 @@ app.use(express.json());
 
 // CORS options for frontend
 const corsOptions = {
-  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    if (!origin) return callback(null, true);
-    const allowed = ['http://localhost:5173'];
-    if (allowed.includes(origin)) return callback(null, true);
-    return callback(new Error('Not allowed by CORS'));
-  },
+  origin: 'http://localhost:5173',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   credentials: true,
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
@@ -34,13 +29,25 @@ app.use(limiter);
 // Services (dev: localhost, prod: docker service names via env)
 const SERVICES = {
   product: process.env.PRODUCT_SERVICE_URL || 'http://localhost:3002',
-  // other services as needed
+  auth: process.env.AUTH_SERVICE_URL || 'http://localhost:3001',
 };
 
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
 
 // Proxy mappings
+app.use('/auth-management', createProxyMiddleware({
+  target: SERVICES.auth,
+  changeOrigin: true,
+  secure: false,
+  xfwd: true,
+  // We keep /auth-management path since auth service uses it
+  onProxyReq: (proxyReq, req) => {
+    if (req.headers.authorization) proxyReq.setHeader('authorization', req.headers.authorization as string);
+    if (req.headers.cookie) proxyReq.setHeader('cookie', req.headers.cookie as string);
+  },
+}));
+
 app.use('/category-management', createProxyMiddleware({
   target: SERVICES.product,
   changeOrigin: true,

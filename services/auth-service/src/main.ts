@@ -12,6 +12,6 @@ async function bootstrap() {
   // Apply response interceptor globally
   app.useGlobalInterceptors(new ResponseInterceptor());
 
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(process.env.PORT ?? 3001);
 }
 bootstrap();
