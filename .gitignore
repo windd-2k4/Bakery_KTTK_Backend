@@ -1,0 +1,8 @@
+# .gitignore
+.env
+node_modules/
+dist/
+*.log
+ 
+# Docker volumes (nếu dùng bind mount)
+docker/volumes/\n# keep nested git backups out of repo\n*.git.backup/

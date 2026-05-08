@@ -1,0 +1,36 @@
+{
+  "vhosts": [{ "name": "/" }],
+  "users": [{
+    "name": "bakery_user",
+    "password": "bakery_pass",
+    "tags": "administrator"
+  }],
+  "permissions": [{
+    "user": "bakery_user", "vhost": "/",
+    "configure": ".*", "write": ".*", "read": ".*"
+  }],
+  "exchanges": [
+    { "name": "bakery.orders",   "vhost": "/", "type": "topic",  "durable": true },
+    { "name": "bakery.payments", "vhost": "/", "type": "direct", "durable": true },
+    { "name": "bakery.notify",   "vhost": "/", "type": "fanout", "durable": true }
+  ],
+  "queues": [
+    { "name": "order.created",        "vhost": "/", "durable": true },
+    { "name": "order.status.changed", "vhost": "/", "durable": true },
+    { "name": "payment.completed",    "vhost": "/", "durable": true },
+    { "name": "notification.email",   "vhost": "/", "durable": true },
+    { "name": "notification.push",    "vhost": "/", "durable": true }
+  ],
+  "bindings": [
+    { "source": "bakery.orders", "vhost": "/",
+      "destination": "order.created",        "routing_key": "order.created" },
+    { "source": "bakery.orders", "vhost": "/",
+      "destination": "order.status.changed", "routing_key": "order.status.*" },
+    { "source": "bakery.payments", "vhost": "/",
+      "destination": "payment.completed",    "routing_key": "payment.completed" },
+    { "source": "bakery.notify", "vhost": "/",
+      "destination": "notification.email",   "routing_key": "" },
+    { "source": "bakery.notify", "vhost": "/",
+      "destination": "notification.push",    "routing_key": "" }
+  ]
+}

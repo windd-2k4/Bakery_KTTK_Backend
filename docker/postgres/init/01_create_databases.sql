@@ -1,0 +1,5 @@
+-- Initialization placeholder for consolidated database setup
+-- docker/postgres/init/01_create_databases.sql
+-- NOTE: The Postgres container uses the `POSTGRES_DB` environment variable
+-- (set in docker-compose.yml) to create the initial database. Keep this file
+-- present but empty to preserve execution order of other init scripts.

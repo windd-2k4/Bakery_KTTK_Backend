@@ -1,0 +1,92 @@
+# docker-compose.yml
+version: '3.8'
+ 
+services:
+ 
+  # ╔══════════════════════════════╗
+  # ║   PostgreSQL — Main Database ║
+  # ╚══════════════════════════════╝
+  postgres:
+    image: postgres:15-alpine
+    container_name: bakery_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bakery_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bakery_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-bakery_db}
+    ports:
+      - '5432:5432'
+    volumes:
+      # Persist data — không mất khi docker compose down
+      - postgres_data:/var/lib/postgresql/data
+      # Auto-run SQL scripts khi lần đầu khởi động
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # Check the actual POSTGRES_DB so pg_isready doesn't attempt to connect
+      # to a database named after the user (which may not exist).
+      test: ['CMD-SHELL', 'pg_isready -d ${POSTGRES_DB:-bakery_db} -U ${POSTGRES_USER:-bakery_user}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bakery_network
+ 
+  # ╔══════════════════════════════╗
+  # ║   Redis — Cache & Session    ║
+  # ╚══════════════════════════════╝
+  redis:
+    image: redis:7-alpine
+    container_name: bakery_redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bakery_network
+ 
+  # ╔══════════════════════════════╗
+  # ║   RabbitMQ — Message Broker  ║
+  # ╚══════════════════════════════╝
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: bakery_rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-bakery_user}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-bakery_pass}
+      # Tự động load queues/exchanges từ file definitions
+      RABBITMQ_LOAD_DEFINITIONS: /etc/rabbitmq/definitions.json
+    ports:
+      - '5672:5672'     # AMQP port
+      - '15672:15672'   # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./docker/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', 'ping']
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - bakery_network
+ 
+# ── VOLUMES (dữ liệu persist khi restart) ──────────────
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
+ 
+# ── NETWORK ────────────────────────────────────────────
+networks:
+  bakery_network:
+    driver: bridge
