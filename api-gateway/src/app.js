@@ -39,7 +39,7 @@ const SERVICES = {
   auth:         process.env.AUTH_SERVICE_URL || 'http://127.0.0.1:3001',
   user:         process.env.USER_SERVICE_URL || 'http://127.0.0.1:3008',
   product:      process.env.PRODUCT_SERVICE_URL || 'http://127.0.0.1:3002',
-  cart:         process.env.CART_SERVICE_URL || 'http://127.0.0.1:3007',
+  cart:         process.env.CART_SERVICE_URL || 'http://127.0.0.1:3006',
   order:        process.env.ORDER_SERVICE_URL || 'http://127.0.0.1:3003',
   payment:      process.env.PAYMENT_SERVICE_URL || 'http://127.0.0.1:3004',
   notification: process.env.NOTIFICATION_SERVICE_URL || 'http://127.0.0.1:3005',
