@@ -1,16 +1,30 @@
-import { Entity, Unique, PrimaryGeneratedColumn, ManyToOne, Column, CreateDateColumn } from 'typeorm';
+import {
+  Entity,
+  Unique,
+  PrimaryGeneratedColumn,
+  ManyToOne,
+  Column,
+  CreateDateColumn,
+  JoinColumn,
+} from 'typeorm';
 import { Cart } from './cart.entity';
 
 @Entity('cart_items')
-@Unique(['cart', 'productId'])   // 1 product chỉ xuất hiện 1 lần trong cart
+@Unique(['cart', 'productId'])
 export class CartItem {
-  @PrimaryGeneratedColumn('uuid') id: string;
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
   @ManyToOne(() => Cart, (cart) => cart.items, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'cart_id' })
   cart: Cart;
-  @Column() productId: string;
-  @Column() productName: string;   // snapshot
-  @Column('decimal', { precision: 10, scale: 2 }) price: number;  // snapshot
-  @Column({ default: 1 }) quantity: number;
-  @Column({ nullable: true }) imageUrl: string;
-  @CreateDateColumn() addedAt: Date;
+
+  @Column({ name: 'product_id', type: 'uuid' })
+  productId: string;
+
+  @Column({ default: 1 })
+  quantity: number;
+
+  @CreateDateColumn({ name: 'added_at' })
+  addedAt: Date;
 }

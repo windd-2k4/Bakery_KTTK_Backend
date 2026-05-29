@@ -1,12 +1,13 @@
 import { Controller, Get } from '@nestjs/common';
-import { AppService } from './app.service';
+import { ApiResponse } from './common/api-response';
 
 @Controller()
 export class AppController {
-  constructor(private readonly appService: AppService) {}
-
-  @Get()
-  getHello(): string {
-    return this.appService.getHello();
+  @Get('health')
+  health() {
+    return ApiResponse.success(
+      { status: 'ok', service: 'cart-service' },
+      'Cart service is healthy',
+    );
   }
 }

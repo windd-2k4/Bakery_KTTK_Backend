@@ -1,9 +1,10 @@
-export class AddItemDto {
-	productId: string;
-	productName?: string;
-	price: number;
-	quantity: number;
-	imageUrl?: string;
-}
+import { IsInt, IsUUID, Min } from 'class-validator';
 
-export default AddItemDto;
+export class AddItemDto {
+  @IsUUID()
+  productId: string;
+
+  @IsInt()
+  @Min(1)
+  quantity: number = 1;
+}
