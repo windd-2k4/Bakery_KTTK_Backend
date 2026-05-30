@@ -11,6 +11,11 @@ import { CartCacheService } from './cart.cache';
 import { AddItemDto } from './dto/add-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
 import { CartResponse } from './interfaces/cart-response.interface';
+import { ProductClient } from './clients/product.client';
+import { ReviewClient } from './clients/review.client';
+import { CartPublisher } from './cart.publisher';
+
+export type CartClearReason = 'checkout' | 'manual' | 'order_created';
 
 @Injectable()
 export class CartService {
@@ -18,9 +23,14 @@ export class CartService {
     @InjectRepository(Cart) private readonly cartRepo: Repository<Cart>,
     @InjectRepository(CartItem) private readonly itemRepo: Repository<CartItem>,
     private readonly cacheService: CartCacheService,
+    private readonly productClient: ProductClient,
+    private readonly reviewClient: ReviewClient,
+    private readonly cartPublisher: CartPublisher,
   ) {}
 
   async getCart(userId: string): Promise<CartResponse> {
+    await this.reviewClient.verifyUser(userId);
+
     const cached = await this.cacheService.get(userId);
     if (cached) {
       return this.toResponse(cached);
@@ -32,10 +42,18 @@ export class CartService {
   }
 
   async addItem(userId: string, dto: AddItemDto): Promise<CartResponse> {
+    await this.reviewClient.verifyUser(userId);
+
     const cart = await this.loadCartFromDb(userId);
     const items = cart.items ?? [];
-
     const existing = items.find((i) => i.productId === dto.productId);
+
+    await this.productClient.assertCanAdd(
+      dto.productId,
+      dto.quantity,
+      existing?.quantity ?? 0,
+    );
+
     if (existing) {
       existing.quantity += dto.quantity;
       await this.itemRepo.save(existing);
@@ -50,6 +68,13 @@ export class CartService {
     }
 
     await this.cacheService.invalidate(userId);
+    await this.cartPublisher.publishItemAdded({
+      userId,
+      productId: dto.productId,
+      quantity: dto.quantity,
+      cartId: cart.id,
+    });
+
     return this.getCart(userId);
   }
 
@@ -59,6 +84,9 @@ export class CartService {
     dto: UpdateItemDto,
   ): Promise<CartResponse> {
     const item = await this.findOwnedItem(userId, itemId);
+
+    await this.productClient.assertCanAdd(item.productId, dto.quantity, 0);
+
     item.quantity = dto.quantity;
     await this.itemRepo.save(item);
 
@@ -74,7 +102,10 @@ export class CartService {
     return this.getCart(userId);
   }
 
-  async clearCart(userId: string): Promise<void> {
+  async clearCart(
+    userId: string,
+    reason: CartClearReason = 'manual',
+  ): Promise<void> {
     const cart = await this.cartRepo.findOne({
       where: { userId },
       relations: ['items'],
@@ -85,6 +116,14 @@ export class CartService {
     }
 
     await this.cacheService.invalidate(userId);
+
+    if (cart) {
+      await this.cartPublisher.publishCartCleared({
+        userId,
+        cartId: cart.id,
+        reason,
+      });
+    }
   }
 
   toResponse(cart: Cart): CartResponse {
@@ -118,7 +157,10 @@ export class CartService {
     return cart;
   }
 
-  private async findOwnedItem(userId: string, itemId: string): Promise<CartItem> {
+  private async findOwnedItem(
+    userId: string,
+    itemId: string,
+  ): Promise<CartItem> {
     const item = await this.itemRepo.findOne({
       where: { id: itemId },
       relations: ['cart'],
