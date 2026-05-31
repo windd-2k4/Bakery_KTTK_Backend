@@ -103,31 +103,61 @@ app.use('/api/users', createProxyMiddleware({
 app.use('/api/products', createProxyMiddleware({ 
   target: SERVICES.product, 
   changeOrigin: true,
-  pathRewrite: { '^/api/products': '' },
+  pathRewrite: { '^/api/products': '/products' },
   logLevel: 'warn',
+  onProxyReq: onProxyReqWithLog,
+  onError: onProxyError
+}));
+
+// Native product routes
+app.use('/api/categories', createProxyMiddleware({
+  target: SERVICES.product,
+  changeOrigin: true,
+  secure: false,
+  xfwd: true,
+  logLevel: 'warn',
+  pathRewrite: { '^/api/categories': '/category-management/api/v1/categories' },
   onProxyReq: onProxyReqWithLog,
   onError: onProxyError
 }));
 
 // Legacy/compat routes used by frontend: forward to product service
-app.use('/category-management', createProxyMiddleware({
+app.use('/category-management/api/v1/categories', createProxyMiddleware({
   target: SERVICES.product,
   changeOrigin: true,
   secure: false,
   xfwd: true,
   logLevel: 'warn',
-  pathRewrite: { '^/category-management': '/api/categories' },
   onProxyReq: onProxyReqWithLog,
   onError: onProxyError
 }));
 
-app.use('/pastry-management', createProxyMiddleware({
+app.use('/pastry-management/api/v1/pastries', createProxyMiddleware({
   target: SERVICES.product,
   changeOrigin: true,
   secure: false,
   xfwd: true,
   logLevel: 'warn',
-  pathRewrite: { '^/pastry-management': '/api/products' },
+  onProxyReq: onProxyReqWithLog,
+  onError: onProxyError
+}));
+
+app.use('/admin/api/v1/pastries', createProxyMiddleware({
+  target: SERVICES.product,
+  changeOrigin: true,
+  secure: false,
+  xfwd: true,
+  logLevel: 'warn',
+  onProxyReq: onProxyReqWithLog,
+  onError: onProxyError
+}));
+
+app.use('/admin/api/v1/categories', createProxyMiddleware({
+  target: SERVICES.product,
+  changeOrigin: true,
+  secure: false,
+  xfwd: true,
+  logLevel: 'warn',
   onProxyReq: onProxyReqWithLog,
   onError: onProxyError
 }));

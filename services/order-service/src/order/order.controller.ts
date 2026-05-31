@@ -1,9 +1,22 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, Logger } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Query,
+  Logger,
+  ParseUUIDPipe,
+} from '@nestjs/common';
 import { OrderService } from './order.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
-import { OrderTransitionGuard } from './guards/order-transition.guard';
+import { QueryOrdersDto } from './dto/query-orders.dto';
+import { ApiResponse } from '../common/api-response';
+import { Order } from './entities/order.entity';
 
 @Controller('orders')
 export class OrderController {
@@ -12,47 +25,58 @@ export class OrderController {
   constructor(private readonly orderService: OrderService) {}
 
   @Post()
-  async create(@Body() createOrderDto: CreateOrderDto) {
+  async create(@Body() createOrderDto: CreateOrderDto): Promise<ApiResponse<Order>> {
     this.logger.log('Creating new order');
-    return this.orderService.create(createOrderDto);
+    const createdOrder = await this.orderService.create(createOrderDto);
+    return ApiResponse.success(createdOrder, 'Order created', 201);
   }
 
   @Get()
-  async findAll(@Req() req: any) {
-    const userId = req.query.userId;
+  async findAll(@Query() query: QueryOrdersDto): Promise<ApiResponse<Order[]>> {
+    const userId = query.userId;
     this.logger.log(`Fetching orders${userId ? ` for user ${userId}` : ''}`);
-    return this.orderService.findAll(userId);
+    const orders = await this.orderService.findAll(userId);
+    return ApiResponse.success(orders);
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string) {
+  async findOne(@Param('id', ParseUUIDPipe) id: string): Promise<ApiResponse<Order>> {
     this.logger.log(`Fetching order ${id}`);
-    return this.orderService.findOne(id);
+    const order = await this.orderService.findOne(id);
+    return ApiResponse.success(order);
   }
 
   @Patch(':id')
-  async update(@Param('id') id: string, @Body() updateOrderDto: UpdateOrderDto) {
+  async update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateOrderDto: UpdateOrderDto,
+  ): Promise<ApiResponse<Order>> {
     this.logger.log(`Updating order ${id}`);
-    return this.orderService.update(id, updateOrderDto);
+    const updatedOrder = await this.orderService.update(id, updateOrderDto);
+    return ApiResponse.success(updatedOrder, 'Order updated');
   }
 
   @Patch(':id/status')
-  @UseGuards(OrderTransitionGuard)
-  async updateStatus(@Param('id') id: string, @Body() updateStatusDto: UpdateStatusDto) {
+  async updateStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateStatusDto: UpdateStatusDto,
+  ): Promise<ApiResponse<Order>> {
     this.logger.log(`Updating status for order ${id} to ${updateStatusDto.status}`);
-    return this.orderService.updateStatus(id, updateStatusDto);
+    const updatedOrder = await this.orderService.updateStatus(id, updateStatusDto);
+    return ApiResponse.success(updatedOrder, 'Order status updated');
   }
 
   @Post(':id/cancel')
-  async cancel(@Param('id') id: string) {
+  async cancel(@Param('id', ParseUUIDPipe) id: string): Promise<ApiResponse<Order>> {
     this.logger.log(`Cancelling order ${id}`);
-    return this.orderService.cancel(id);
+    const cancelledOrder = await this.orderService.cancel(id);
+    return ApiResponse.success(cancelledOrder, 'Order cancelled');
   }
 
   @Delete(':id')
-  async remove(@Param('id') id: string) {
+  async remove(@Param('id', ParseUUIDPipe) id: string): Promise<ApiResponse<{ deleted: boolean }>> {
     this.logger.log(`Deleting order ${id}`);
     await this.orderService.remove(id);
-    return { message: 'Order deleted successfully' };
+    return ApiResponse.success({ deleted: true }, 'Order deleted successfully');
   }
 }

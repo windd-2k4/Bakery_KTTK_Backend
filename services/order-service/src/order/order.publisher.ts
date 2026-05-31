@@ -30,10 +30,11 @@ export class OrderPublisher {
     });
   }
 
-  async publishStatusChanged(order: Order) {
+  async publishStatusChanged(order: Order, fromStatus: string) {
     await this.publishToBroker('order.status.changed', {
       orderId:   order.id,
       userId:    order.userId,
+      fromStatus,
       newStatus: order.status,
       updatedAt: order.updatedAt,
     });

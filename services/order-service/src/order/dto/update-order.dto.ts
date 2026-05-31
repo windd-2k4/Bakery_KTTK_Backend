@@ -1,9 +1,9 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsObject, IsOptional, IsString } from 'class-validator';
 
 export class UpdateOrderDto {
   @IsOptional()
-  @IsString()
-  shippingAddress?: string;
+  @IsObject()
+  shippingAddress?: Record<string, unknown>;
 
   @IsOptional()
   @IsString()

@@ -127,7 +127,7 @@ describe('AuthManagementController', () => {
  */
 
 import { INestApplication } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 
 describe('Auth Management (e2e)', () => {
   let app: INestApplication;

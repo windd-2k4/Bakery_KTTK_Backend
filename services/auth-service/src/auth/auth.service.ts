@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, InternalServerErrorException, ConflictException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import * as bcrypt from 'bcryptjs';
@@ -21,6 +21,18 @@ export class AuthService {
   async register(dto: RegisterDto) {
     try {
       console.log(`[AuthService] Processing registration for email: ${dto.email}`);
+      const username = this.resolveUsername(dto.email, dto.username);
+
+      const existingByEmail = await this.usersService.findByEmail(dto.email.toLowerCase());
+      if (existingByEmail) {
+        throw new ConflictException('Email đã tồn tại trong hệ thống');
+      }
+
+      const existingByUsername = username ? await this.usersService.findByUsername(username) : null;
+      if (existingByUsername) {
+        throw new ConflictException('Username đã tồn tại trong hệ thống');
+      }
+
       const hashedPassword = await bcrypt.hash(dto.password, 12);
       
       let fullName = dto.fullName;
@@ -35,6 +47,7 @@ export class AuthService {
 
       const user = await this.usersService.create({
         email: dto.email,
+        username,
         password: hashedPassword,
         firstName,
         lastName,
@@ -53,6 +66,9 @@ export class AuthService {
       };
     } catch (error) {
       console.error('[AuthService] Lỗi khi lưu vào Database:', error);
+      if (error instanceof ConflictException) {
+        throw error;
+      }
       if (error.code === '23505') {
         throw new InternalServerErrorException('Email đã tồn tại trong hệ thống');
       }
@@ -64,7 +80,7 @@ export class AuthService {
    * Login with email (legacy endpoint)
    */
   async login(dto: LoginDto) {
-    const user = await this.usersService.findByEmail(dto.email);
+    const user = await this.usersService.findByIdentifier((dto as any).identifier || dto.email);
     if (!user || !(await bcrypt.compare(dto.password, user.password))) {
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -85,7 +101,7 @@ export class AuthService {
   async authenticate(
     authRequest: AuthenticationRequest,
   ): Promise<AuthenticationResponse> {
-    const user = await this.usersService.findByEmail(authRequest.identifier);
+    const user = await this.usersService.findByIdentifier(authRequest.identifier);
 
     if (!user) {
       throw new UnauthorizedException('User not found');
@@ -103,6 +119,45 @@ export class AuthService {
     const { accessToken, refreshToken } = this.generateTokens(user);
 
     // Lưu refreshToken vào database
+    await this.usersService.updateRefreshToken(user.id, refreshToken);
+
+    return {
+      accessToken,
+      refreshToken,
+      authenticated: true,
+    };
+  }
+
+  async authenticateGoogle(payload: { token?: string; code?: string }): Promise<AuthenticationResponse> {
+    const rawToken = payload.token || payload.code;
+    if (!rawToken) {
+      throw new BadRequestException('Google token is required');
+    }
+
+    const googleProfile = this.decodeJwtPayload(rawToken);
+    const email = (googleProfile.email || '').toLowerCase();
+
+    if (!email) {
+      throw new UnauthorizedException('Invalid Google token');
+    }
+
+    let user = await this.usersService.findByEmail(email);
+    if (!user) {
+      const username = this.resolveUsername(email, googleProfile.preferred_username || googleProfile.name);
+      const fullName = googleProfile.name || [googleProfile.given_name, googleProfile.family_name].filter(Boolean).join(' ') || email.split('@')[0];
+
+      user = await this.usersService.create({
+        email,
+        username,
+        password: await bcrypt.hash(cryptoRandomPassword(), 12),
+        fullName,
+        firstName: googleProfile.given_name,
+        lastName: googleProfile.family_name,
+        role: 'CUSTOMER',
+      });
+    }
+
+    const { accessToken, refreshToken } = this.generateTokens(user);
     await this.usersService.updateRefreshToken(user.id, refreshToken);
 
     return {
@@ -171,4 +226,29 @@ export class AuthService {
       refreshToken: this.jwtService.sign(payload, { expiresIn: '7d' }),
     };
   }
+
+  private resolveUsername(email: string, fallback?: string | null): string {
+    const normalizedFallback = (fallback || '').trim().toLowerCase().replace(/\s+/g, '.');
+    const fromEmail = email.split('@')[0].trim().toLowerCase();
+    return normalizedFallback || fromEmail;
+  }
+
+  private decodeJwtPayload(token: string): any {
+    const parts = token.split('.');
+    if (parts.length < 2) {
+      return {};
+    }
+
+    try {
+      const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+      return JSON.parse(Buffer.from(padded, 'base64').toString('utf8'));
+    } catch {
+      return {};
+    }
+  }
+}
+
+function cryptoRandomPassword(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 }

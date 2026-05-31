@@ -26,6 +26,10 @@ export class RegisterDto {
 
   @IsString()
   @IsOptional()
+  username?: string;
+
+  @IsString()
+  @IsOptional()
   @Matches(/^\+?[0-9\s\-\(\)]*$/, { message: 'Phone number format is invalid' })
   phone?: string;
 

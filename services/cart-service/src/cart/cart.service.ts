@@ -30,7 +30,6 @@ export class CartService {
 
   async getCart(userId: string): Promise<CartResponse> {
     await this.reviewClient.verifyUser(userId);
-
     const cached = await this.cacheService.get(userId);
     if (cached) {
       return this.toResponse(cached);
@@ -53,7 +52,6 @@ export class CartService {
       dto.quantity,
       existing?.quantity ?? 0,
     );
-
     if (existing) {
       existing.quantity += dto.quantity;
       await this.itemRepo.save(existing);
@@ -157,10 +155,7 @@ export class CartService {
     return cart;
   }
 
-  private async findOwnedItem(
-    userId: string,
-    itemId: string,
-  ): Promise<CartItem> {
+  private async findOwnedItem(userId: string, itemId: string): Promise<CartItem> {
     const item = await this.itemRepo.findOne({
       where: { id: itemId },
       relations: ['cart'],

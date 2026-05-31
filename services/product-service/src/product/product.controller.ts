@@ -12,17 +12,11 @@ import {
 } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto';
 import { FilterProductDto } from './dto/filter-product.dto';
-import { LegacyPastryDto } from './dto/legacy-pastry.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductService } from './product.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
-
-interface LegacyPastriesMigrationDto {
-  pastries: LegacyPastryDto[];
-  categoryIdMap: Record<string, string>;
-}
 
 @Controller('products')
 export class ProductController {
@@ -36,6 +30,13 @@ export class ProductController {
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.productService.findOne(id);
+  }
+
+  @Get('internal/:id/snapshot')
+  getSnapshot(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<{ id: string; name: string; price: number; isAvailable: boolean }> {
+    return this.productService.findSnapshot(id);
   }
 
   @Post()
@@ -57,12 +58,5 @@ export class ProductController {
   @Roles('ADMIN')
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.productService.remove(id);
-  }
-
-  @Post('migrations/legacy-pastries')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
-  migrateLegacyPastries(@Body() dto: LegacyPastriesMigrationDto) {
-    return this.productService.migrateLegacyPastries(dto.pastries, dto.categoryIdMap);
   }
 }
