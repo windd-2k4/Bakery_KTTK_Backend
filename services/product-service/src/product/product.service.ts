@@ -1,28 +1,46 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto';
 import { FilterProductDto } from './dto/filter-product.dto';
-import { LegacyPastryDto, LegacyPastryStatus } from './dto/legacy-pastry.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { Product } from './entities/product.entity';
 import { Category } from './entities/category.entity';
 import { ApiResponse } from '../common/api-response';
+import { ProductRepository } from './repositories/product.repository';
+import { CategoryRepository } from './repositories/category.repository';
+
+interface ProductSnapshot {
+  id: string;
+  name: string;
+  price: number;
+  isAvailable: boolean;
+}
 
 @Injectable()
 export class ProductService {
   constructor(
-    @InjectRepository(Product)
-    private readonly productRepo: Repository<Product>,
+    private readonly productRepo: ProductRepository,
+    private readonly categoryRepo: CategoryRepository,
   ) {}
 
   async create(dto: CreateProductDto): Promise<ApiResponse<Product>> {
     const slug = this.buildSlug(dto.slug || dto.name);
 
+    const existingBySlug = await this.productRepo.findBySlug(slug);
+    if (existingBySlug) {
+      throw new BadRequestException('Product slug already exists');
+    }
+
+    if (dto.categoryId) {
+      const categoryExists = await this.categoryRepo.existsById(dto.categoryId);
+      if (!categoryExists) {
+        throw new BadRequestException(`Category ${dto.categoryId} not found`);
+      }
+    }
+
     const product = this.productRepo.create({
       ...dto,
       slug,
-      category: { id: dto.categoryId } as Category,
+      ...(dto.categoryId ? { category: { id: dto.categoryId } as Category } : {}),
     });
 
     const saved = await this.productRepo.save(product);
@@ -48,7 +66,7 @@ export class ProductService {
       order = 'DESC',
     } = filter;
 
-    const qb = this.productRepo.createQueryBuilder('p').leftJoinAndSelect('p.category', 'category');
+    const qb = this.productRepo.queryBuilder('p').leftJoinAndSelect('p.category', 'category');
 
     if (search) {
       qb.andWhere('p.name ILIKE :search', { search: `%${search}%` });
@@ -91,7 +109,7 @@ export class ProductService {
   }
 
   async findOne(id: string): Promise<ApiResponse<Product>> {
-    const product = await this.productRepo.findOne({ where: { id } });
+    const product = await this.productRepo.findById(id);
     if (!product) {
       throw new NotFoundException(`Product ${id} not found`);
     }
@@ -100,9 +118,16 @@ export class ProductService {
   }
 
   async update(id: string, dto: UpdateProductDto): Promise<ApiResponse<Product>> {
-    const productEntity = await this.productRepo.findOne({ where: { id } });
+    const productEntity = await this.productRepo.findById(id);
     if (!productEntity) {
       throw new NotFoundException(`Product ${id} not found`);
+    }
+
+    if (dto.categoryId) {
+      const categoryExists = await this.categoryRepo.existsById(dto.categoryId);
+      if (!categoryExists) {
+        throw new BadRequestException(`Category ${dto.categoryId} not found`);
+      }
     }
 
     Object.assign(productEntity, {
@@ -116,8 +141,8 @@ export class ProductService {
   }
 
   async remove(id: string): Promise<ApiResponse<{ deleted: boolean }>> {
-    const result = await this.productRepo.delete(id);
-    if (!result.affected) {
+    const deleted = await this.productRepo.deleteById(id);
+    if (!deleted) {
       throw new NotFoundException(`Product ${id} not found`);
     }
 
@@ -125,40 +150,21 @@ export class ProductService {
   }
 
   async updateRating(id: string, avgRating: number, reviewCount: number) {
-    return this.productRepo.update(id, { avgRating, reviewCount });
+    return this.productRepo.updateById(id, { avgRating, reviewCount });
   }
 
-  async migrateLegacyPastries(
-    legacyPastries: LegacyPastryDto[],
-    categoryIdMap: Record<string, string>,
-  ): Promise<ApiResponse<Product[]>> {
-    const migrated: Product[] = [];
-
-    for (const legacyPastry of legacyPastries) {
-      const slug = this.buildSlug(legacyPastry.name);
-      const existing = await this.productRepo.findOne({ where: { slug } });
-      if (existing) {
-        migrated.push(existing);
-        continue;
-      }
-
-      const entity = this.productRepo.create();
-      entity.name = legacyPastry.name;
-      entity.slug = slug;
-      entity.description = legacyPastry.description ?? null;
-      entity.price = legacyPastry.price ?? 0;
-      entity.stock = legacyPastry.stock_quantity ?? 0;
-      entity.imageUrl = legacyPastry.image_url ?? null;
-      entity.isAvailable = this.mapLegacyStatusToAvailability(legacyPastry.status);
-      if (legacyPastry.category_id && categoryIdMap[legacyPastry.category_id]) {
-        entity.category = { id: categoryIdMap[legacyPastry.category_id] } as Category;
-      }
-
-      const saved = await this.productRepo.save(entity);
-      migrated.push(saved);
+  async findSnapshot(id: string): Promise<ProductSnapshot> {
+    const product = await this.productRepo.findById(id);
+    if (!product) {
+      throw new NotFoundException(`Product ${id} not found`);
     }
 
-    return ApiResponse.success(migrated, 'Legacy pastries migrated');
+    return {
+      id: product.id,
+      name: product.name,
+      price: Number(product.price),
+      isAvailable: product.isAvailable,
+    };
   }
 
   private buildSlug(input: string): string {
@@ -173,7 +179,4 @@ export class ProductService {
       .replace(/^-|-$/g, '');
   }
 
-  private mapLegacyStatusToAvailability(status: LegacyPastryStatus): boolean {
-    return status === 'ACTIVE';
-  }
 }

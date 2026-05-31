@@ -3,20 +3,23 @@ import {
   CreateDateColumn, UpdateDateColumn, JoinColumn
 } from 'typeorm';
 import { Category } from './category.entity';
+import { PastryStatus } from '../../compat/pastry-status.enum';
  
 @Entity('products')
 export class Product {
   @PrimaryGeneratedColumn('uuid')
   id: string;
  
-  @Column() name: string;
-  @Column({ unique: true }) slug: string;
+  @Column({ type: 'varchar', length: 255 }) name: string;
+  @Column({ type: 'varchar', length: 255, unique: true }) slug: string;
   @Column('text', { nullable: true }) description: string | null;
   @Column('decimal', { precision: 10, scale: 2 }) price: number;
   @Column({ default: 0 }) stock: number;
-  @Column({ name: 'image_url', nullable: true }) imageUrl: string | null;
-  @Column('simple-array', { nullable: true }) images: string[];
+  @Column({ type: 'varchar', name: 'image_url', length: 500, nullable: true }) imageUrl: string | null;
+  @Column({ type: 'varchar', array: true, nullable: true }) images: string[];
   @Column({ name: 'is_available', default: true }) isAvailable: boolean;
+  @Column({ type: 'enum', enum: PastryStatus, default: PastryStatus.ACTIVE })
+  status: PastryStatus;
   @Column('decimal', { name: 'avg_rating', precision: 3, scale: 2, default: 0 }) avgRating: number;
   @Column({ name: 'review_count', default: 0 }) reviewCount: number;
  

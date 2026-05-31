@@ -5,6 +5,7 @@ export enum OrderStatus {
   READY     = 'READY',
   COMPLETED = 'COMPLETED',
   CANCELLED = 'CANCELLED',
+  REFUND_PENDING = 'REFUND_PENDING',
 }
  
 // State Machine — ai được phép chuyển sang trạng thái nào
@@ -30,5 +31,9 @@ export const TRANSITIONS: Record<string, {
   [OrderStatus.CANCELLED]: {
     from:  [OrderStatus.PENDING, OrderStatus.CONFIRMED],
     role:  ['CUSTOMER', 'ADMIN'],
+  },
+  [OrderStatus.REFUND_PENDING]: {
+    from: [OrderStatus.CANCELLED, OrderStatus.COMPLETED],
+    role: ['ADMIN'],
   },
 };

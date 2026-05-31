@@ -6,11 +6,13 @@ import { OrderPublisher } from './order.publisher';
 import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { OrderStatusLog } from './entities/order-status-log.entity';
+import { OrderRepository } from './repositories/order.repository';
+import { CatalogAuthClient } from './clients/catalog-auth.client';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Order, OrderItem, OrderStatusLog])],
   controllers: [OrderController],
-  providers: [OrderService, OrderPublisher],
+  providers: [OrderService, OrderPublisher, OrderRepository, CatalogAuthClient],
   exports: [OrderService],
 })
 export class OrderModule {}

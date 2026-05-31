@@ -23,8 +23,9 @@ export class CreateProductDto {
   @Min(0)
   stock: number;
  
+  @IsOptional()
   @IsUUID()
-  categoryId: string;
+  categoryId?: string;
  
   @IsOptional()
   @IsString()

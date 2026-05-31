@@ -30,6 +30,8 @@ export class UsersService {
   ) {}
 
   async create(userData: any): Promise<User> {
+    const username =
+      (userData.username || userData.email?.split('@')[0] || '').trim().toLowerCase() || null;
     const fullName = this.normalizeFullName(
       userData.fullName,
       userData.firstName,
@@ -42,6 +44,7 @@ export class UsersService {
       password: userData.password,
       fullName,
       phone: userData.phone ?? null,
+      avatarUrl: username,
       role: userData.role ?? 'CUSTOMER',
       isActive: userData.isActive ?? true,
       refreshToken: userData.refreshToken ?? null,
@@ -52,6 +55,17 @@ export class UsersService {
 
   async findByEmail(email: string): Promise<User | null> {
     return this.userRepository.findOne({ where: { email } });
+  }
+
+  async findByUsername(username: string): Promise<User | null> {
+    return this.userRepository.findOne({ where: { avatarUrl: username } });
+  }
+
+  async findByIdentifier(identifier: string): Promise<User | null> {
+    const normalized = identifier.trim().toLowerCase();
+    return this.userRepository.findOne({
+      where: [{ email: normalized }, { avatarUrl: normalized }],
+    });
   }
 
   async findById(id: string): Promise<User | null> {

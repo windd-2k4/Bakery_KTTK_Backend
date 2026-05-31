@@ -15,6 +15,11 @@ import { RefreshTokenRequest } from './dto/refresh-token-request.dto';
 import type { ApiResponse } from '../common/interfaces/response.interface';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
+class GoogleAuthRequest {
+  token?: string;
+  code?: string;
+}
+
 @Controller('auth-management/api/v1/auth')
 export class AuthManagementController {
   constructor(private readonly authService: AuthService) {}
@@ -49,6 +54,19 @@ export class AuthManagementController {
     return {
       code: 200,
       message: 'Login successful',
+      data: result,
+    };
+  }
+
+  @Post('google')
+  async googleLogin(
+    @Body() payload: GoogleAuthRequest,
+  ): Promise<ApiResponse<AuthenticationResponse>> {
+    const result = await this.authService.authenticateGoogle(payload);
+
+    return {
+      code: 200,
+      message: 'Google login successful',
       data: result,
     };
   }
