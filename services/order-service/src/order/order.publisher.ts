@@ -39,4 +39,13 @@ export class OrderPublisher {
       updatedAt: order.updatedAt,
     });
   }
+
+  async publishOrderCancelled(order: Order, reason?: string) {
+    await this.publishToBroker('order.cancelled', {
+      orderId:   order.id,
+      userId:    order.userId,
+      reason:    reason ?? order.cancelledReason,
+      cancelledAt: new Date(),
+    });
+  }
 }
