@@ -1,258 +1,291 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { createHmac } from 'crypto';
 import { Repository } from 'typeorm';
-import { Payment } from './entities/payment.entity';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { Payment } from './entities/payment.entity';
 import { PaymentMethod, PaymentStatus } from './enums/payment.enum';
-import { IPaymentStrategy } from './strategies/payment.strategy';
+import { PaymentPublisher } from './publishers/payment.publisher';
+import { SepayStrategy } from './strategies/sepay.strategy';
+import { StripeStrategy } from './strategies/stripe.strategy';
 import { VnpayStrategy } from './strategies/vnpay.strategy';
-import { MomoStrategy } from './strategies/momo.strategy';
-import { CodStrategy } from './strategies/cod.strategy';
-import { ApiResponse } from '../common/api-response';
-
-type LegacyOrderStatus =
-  | 'PENDING'
-  | 'PAID'
-  | 'CONFIRMED'
-  | 'COMPLETED'
-  | 'REFUND_PENDING'
-  | 'CANCELLED';
-
-interface LegacyOrderRecord {
-  id: string;
-  userId: string;
-  tongTien: number;
-  paymentMethod?: string | null;
-  trangThai: LegacyOrderStatus;
-  ngayDatHang?: Date | string | null;
-}
+import { OrderClient } from './clients/order.client';
 
 @Injectable()
 export class PaymentService {
   private readonly logger = new Logger(PaymentService.name);
-  private readonly strategies: Map<PaymentMethod, IPaymentStrategy>;
 
   constructor(
     @InjectRepository(Payment)
-    private paymentRepository: Repository<Payment>,
-    private vnpayStrategy: VnpayStrategy,
-    private momoStrategy: MomoStrategy,
-    private codStrategy: CodStrategy,
-  ) {
-    this.strategies = new Map<PaymentMethod, IPaymentStrategy>([
-      [PaymentMethod.VNPAY, this.vnpayStrategy],
-      [PaymentMethod.MOMO, this.momoStrategy],
-      [PaymentMethod.COD, this.codStrategy],
-    ]);
+    private readonly paymentRepository: Repository<Payment>,
+    private readonly stripeStrategy: StripeStrategy,
+    private readonly sepayStrategy: SepayStrategy,
+    private readonly vnpayStrategy: VnpayStrategy,
+    private readonly paymentPublisher: PaymentPublisher,
+    private readonly orderClient: OrderClient,
+  ) {}
+
+  async createSession(dto: CreatePaymentDto) {
+    const order = await this.orderClient.getOrderById(dto.orderId);
+    if (!order) {
+      throw new NotFoundException(`Order ${dto.orderId} not found`);
+    }
+
+    if (order.paymentMethod?.toUpperCase?.() && order.paymentMethod.toUpperCase() !== dto.method) {
+      throw new BadRequestException(`Payment method mismatch. Order requires ${order.paymentMethod}`);
+    }
+
+    const strategy = this.resolveStrategy(dto.method);
+    const amount = Number(order.totalAmount);
+    const description = `Payment for order ${order.id}`;
+    const result = await strategy.createPayment(order.id, amount, description);
+
+    const payment = this.paymentRepository.create({
+      orderId: order.id,
+      userId: order.userId,
+      amount,
+      method: dto.method,
+      status: PaymentStatus.PENDING,
+      providerReference: result.reference ?? null,
+      paymentContent: result.qrPayload ? String(result.qrPayload['transferContent'] ?? '') : null,
+      paymentUrl: result.sessionUrl ?? result.paymentUrl ?? null,
+      qrPayload: result.qrPayload ?? null,
+      providerData: result.providerData ?? null,
+    });
+
+    const saved = await this.paymentRepository.save(payment);
+
+    return {
+      success: true,
+      data: {
+        paymentId: saved.id,
+        orderId: saved.orderId,
+        method: saved.method,
+        amount: saved.amount,
+        status: saved.status,
+        sessionUrl: result.sessionUrl ?? null,
+        paymentUrl: result.paymentUrl ?? result.sessionUrl ?? null,
+        qrPayload: result.qrPayload ?? null,
+        providerData: result.providerData ?? null,
+      },
+    };
   }
-    async createPayment(createPaymentDto: CreatePaymentDto): Promise<ApiResponse<Payment>> {
-      const strategy = this.getStrategy(createPaymentDto.method);
 
-      const paymentResult = await strategy.createPayment(
-        createPaymentDto.orderId,
-        createPaymentDto.amount,
-        createPaymentDto.userId,
-        createPaymentDto.description,
-      );
+  async handleStripeWebhook(payload: Record<string, unknown>) {
+    try {
+      const eventType = typeof payload?.['type'] === 'string' ? String(payload['type']) : '';
+      if (eventType !== 'checkout.session.completed') {
+        return { success: true, skipped: true };
+      }
 
-      const payment = this.paymentRepository.create({
-        orderId: createPaymentDto.orderId,
-        userId: createPaymentDto.userId,
-        amount: createPaymentDto.amount,
-        method: createPaymentDto.method,
-        status: paymentResult.success ? PaymentStatus.PROCESSING : PaymentStatus.FAILED,
-        transactionId: paymentResult.transactionId ?? null,
-        reference: paymentResult.reference ?? null,
-        description: createPaymentDto.description ?? null,
-        responseCode: paymentResult.responseCode ?? null,
-        responseMessage: paymentResult.responseMessage,
-        paymentUrl: paymentResult.paymentUrl ?? null,
-      });
+      const session = (payload?.['data'] as { object?: Record<string, unknown> } | undefined)?.object ?? {};
+      const metadata = (session?.['metadata'] as Record<string, unknown> | undefined) ?? {};
+      const orderId = typeof metadata['orderId'] === 'string' ? String(metadata['orderId']) : '';
+      if (!orderId) {
+        throw new BadRequestException('Stripe webhook missing metadata.orderId');
+      }
+
+      const payment = await this.findPaymentByOrderId(orderId);
+      payment.status = PaymentStatus.SUCCESS;
+      payment.providerReference = typeof session['id'] === 'string' ? String(session['id']) : payment.providerReference ?? null;
+      payment.providerData = payload;
+      payment.paidAt = new Date();
 
       const saved = await this.paymentRepository.save(payment);
-      return ApiResponse.success(saved, 'Payment created', 201);
-    }
+      await this.paymentPublisher.publishPaymentCompleted(this.toCompletedEvent(saved));
 
-    async findOne(id: string): Promise<ApiResponse<Payment>> {
-      const payment = await this.paymentRepository.findOne({ where: { id } });
-      if (!payment) {
-        throw new NotFoundException(`Payment ${id} not found`);
+      return { success: true, data: saved };
+    } catch (error) {
+      this.logger.error('Stripe webhook processing failed', error instanceof Error ? error.stack : String(error));
+      return { success: false, message: error instanceof Error ? error.message : 'Stripe webhook failed' };
+    }
+  }
+
+  async handleSepayWebhook(payload: Record<string, unknown>) {
+    try {
+      const transferContent = this.extractTransferContent(payload);
+      const matchedOrderId = this.extractOrderIdFromContent(transferContent);
+      if (!matchedOrderId) {
+        return { success: true, skipped: true };
       }
 
-      return ApiResponse.success(payment);
-    }
-
-    async findByOrderId(orderId: string): Promise<ApiResponse<Payment | null>> {
-      const payment = await this.paymentRepository.findOne({ where: { orderId } });
-      return ApiResponse.success(payment);
-    }
-
-    async findAll(): Promise<ApiResponse<Payment[]>> {
-      const payments = await this.paymentRepository.find({ order: { createdAt: 'DESC' } });
-      return ApiResponse.success(payments);
-    }
-
-    async verifyPayment(id: string, transactionId: string): Promise<ApiResponse<Payment>> {
-      const payment = await this.findPaymentOrThrow(id);
-      const strategy = this.getStrategy(payment.method);
-      const verified = await strategy.verifyPayment(transactionId, Number(payment.amount));
-
-      payment.transactionId = transactionId;
-      payment.status = verified ? PaymentStatus.SUCCESS : PaymentStatus.FAILED;
-      payment.responseCode = verified ? '00' : '99';
-      payment.responseMessage = verified ? 'Payment verified' : 'Payment verification failed';
-
-      const updated = await this.paymentRepository.save(payment);
-      return ApiResponse.success(updated, 'Payment verification updated');
-    }
-
-    async refund(id: string): Promise<ApiResponse<Payment>> {
-      const payment = await this.findPaymentOrThrow(id);
-      const strategy = this.getStrategy(payment.method);
-      const refundResult = await strategy.refund(payment.transactionId || payment.reference || payment.id, Number(payment.amount));
-
-      if (!refundResult.success) {
-        throw new BadRequestException(refundResult.responseMessage);
+      const payment = await this.findPaymentByOrderId(matchedOrderId);
+      const receivedAmount = this.extractAmount(payload);
+      const expectedAmount = Number(payment.amount);
+      if (!Number.isNaN(receivedAmount) && receivedAmount !== expectedAmount) {
+        return { success: true, skipped: true, reason: 'amount_mismatch' };
       }
 
-      payment.status = PaymentStatus.REFUNDED;
-      payment.responseMessage = refundResult.responseMessage;
-      const updated = await this.paymentRepository.save(payment);
+      payment.status = PaymentStatus.SUCCESS;
+      payment.providerReference = this.extractTransactionId(payload) ?? payment.providerReference ?? null;
+      payment.providerData = payload;
+      payment.paidAt = new Date();
 
-      return ApiResponse.success(updated, 'Refund processed');
+      const saved = await this.paymentRepository.save(payment);
+      await this.paymentPublisher.publishPaymentCompleted(this.toCompletedEvent(saved));
+
+      return { success: true, data: saved };
+    } catch (error) {
+      this.logger.error('SePay webhook processing failed', error instanceof Error ? error.stack : String(error));
+      return { success: false, message: error instanceof Error ? error.message : 'SePay webhook failed' };
+    }
+  }
+
+  async handleVnpayCallback(query: Record<string, unknown>) {
+    try {
+      const secretKey = process.env.VNPAY_SECRET_KEY ?? 'DEMO_SECRET';
+      const checksumValid = this.validateVnpayChecksum(query, secretKey);
+      if (!checksumValid) {
+        throw new BadRequestException('Invalid VNPAY checksum');
+      }
+
+      const responseCode = typeof query['vnp_ResponseCode'] === 'string' ? String(query['vnp_ResponseCode']) : '';
+      if (responseCode !== '00') {
+        return { success: true, skipped: true, responseCode };
+      }
+
+      const orderRef = typeof query['vnp_TxnRef'] === 'string' ? String(query['vnp_TxnRef']) : '';
+      const orderId = this.extractOrderIdFromTxnRef(orderRef);
+      if (!orderId) {
+        throw new BadRequestException('Cannot resolve orderId from VNPAY transaction reference');
+      }
+
+      const payment = await this.findPaymentByOrderId(orderId);
+      payment.status = PaymentStatus.SUCCESS;
+      payment.providerReference = typeof query['vnp_TransactionNo'] === 'string' ? String(query['vnp_TransactionNo']) : payment.providerReference ?? null;
+      payment.providerData = query;
+      payment.paidAt = new Date();
+
+      const saved = await this.paymentRepository.save(payment);
+      await this.paymentPublisher.publishPaymentCompleted(this.toCompletedEvent(saved));
+
+      return { success: true, data: saved };
+    } catch (error) {
+      this.logger.error('VNPAY callback processing failed', error instanceof Error ? error.stack : String(error));
+      return { success: false, message: error instanceof Error ? error.message : 'VNPAY callback failed' };
+    }
+  }
+
+  async findAll() {
+    return this.paymentRepository.find({ order: { createdAt: 'DESC' } });
+  }
+
+  async findOne(id: string) {
+    const payment = await this.paymentRepository.findOne({ where: { id } });
+    if (!payment) {
+      throw new NotFoundException(`Payment ${id} not found`);
     }
 
-    async handleCallback(method: PaymentMethod, callbackData: any): Promise<Payment> {
-      const strategy = this.getStrategy(method);
-      const callbackResult = await strategy.handleCallback(callbackData);
-      const payment = await this.findPaymentByReferenceOrThrow(callbackData, callbackResult);
+    return payment;
+  }
 
-      payment.transactionId = callbackResult.transactionId ?? payment.transactionId;
-      payment.responseCode = callbackResult.responseCode ?? payment.responseCode;
-      payment.responseMessage = callbackResult.responseMessage;
-      payment.status = callbackResult.success ? PaymentStatus.SUCCESS : PaymentStatus.FAILED;
+  private resolveStrategy(method: PaymentMethod) {
+    switch (method) {
+      case PaymentMethod.STRIPE:
+        return this.stripeStrategy;
+      case PaymentMethod.SEPAY:
+        return this.sepayStrategy;
+      case PaymentMethod.VNPAY:
+        return this.vnpayStrategy;
+      default:
+        throw new BadRequestException(`Unsupported payment method ${method}`);
+    }
+  }
 
-      return this.paymentRepository.save(payment);
+  private async findPaymentByOrderId(orderId: string) {
+    const payment = await this.paymentRepository.findOne({ where: { orderId } });
+    if (!payment) {
+      throw new NotFoundException(`Payment for order ${orderId} not found`);
     }
 
-    async migrateLegacyOrdersToCompletedPayments(
-      legacyOrders: LegacyOrderRecord[],
-    ): Promise<ApiResponse<Array<{ orderId: string; paymentId: string; orderStatus: 'COMPLETED'; paymentStatus: PaymentStatus }>>> {
-      const migrated: Array<{ orderId: string; paymentId: string; orderStatus: 'COMPLETED'; paymentStatus: PaymentStatus }> = [];
+    return payment;
+  }
 
-      for (const legacyOrder of legacyOrders) {
-        const existing = await this.paymentRepository.findOne({ where: { orderId: legacyOrder.id } });
-        const method = this.mapLegacyPaymentMethod(legacyOrder.paymentMethod);
+  private toCompletedEvent(payment: Payment) {
+    return {
+      paymentId: payment.id,
+      orderId: payment.orderId,
+      method: payment.method,
+      amount: Number(payment.amount),
+      providerReference: payment.providerReference ?? null,
+      paidAt: payment.paidAt ?? new Date(),
+    };
+  }
 
-        if (existing) {
-          existing.method = method;
-          existing.status = PaymentStatus.SUCCESS;
-          existing.amount = legacyOrder.tongTien;
-          existing.responseMessage = 'Migrated from legacy orders';
-          existing.reference = existing.reference || `legacy-${legacyOrder.id}`;
+  private extractTransferContent(payload: Record<string, unknown>): string {
+    const contentCandidates = [
+      payload['content'],
+      payload['description'],
+      payload['transferContent'],
+      (payload['data'] as Record<string, unknown> | undefined)?.['content'],
+      (payload['data'] as Record<string, unknown> | undefined)?.['description'],
+    ];
 
-          const updated = await this.paymentRepository.save(existing);
-          migrated.push({
-            orderId: legacyOrder.id,
-            paymentId: updated.id,
-            orderStatus: 'COMPLETED',
-            paymentStatus: updated.status,
-          });
-          continue;
+    for (const candidate of contentCandidates) {
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate.trim();
+      }
+    }
+
+    return '';
+  }
+
+  private extractOrderIdFromContent(content: string): string | null {
+    const match = content.match(/SB([A-Za-z0-9-]+)/i);
+    return match?.[1] ?? null;
+  }
+
+  private extractAmount(payload: Record<string, unknown>): number {
+    const candidates = [payload['amount'], payload['creditAmount'], payload['transactionAmount']];
+    for (const candidate of candidates) {
+      const value = Number(candidate);
+      if (!Number.isNaN(value) && value > 0) {
+        return value;
+      }
+    }
+
+    return NaN;
+  }
+
+  private extractTransactionId(payload: Record<string, unknown>): string | null {
+    const candidates = [payload['transactionId'], payload['id'], payload['bankTransactionId']];
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate.trim();
+      }
+    }
+
+    return null;
+  }
+
+  private extractOrderIdFromTxnRef(txnRef: string): string | null {
+    const match = txnRef.match(/(?:VNPAY-)?(.+)-\d+$/i);
+    return match?.[1] ?? null;
+  }
+
+  private validateVnpayChecksum(query: Record<string, unknown>, secretKey: string): boolean {
+    try {
+      const secureHash = typeof query['vnp_SecureHash'] === 'string' ? String(query['vnp_SecureHash']) : '';
+      if (!secureHash) {
+        return false;
+      }
+
+      const filteredEntries = Object.entries(query)
+        .filter(([key]) => key !== 'vnp_SecureHash' && key !== 'vnp_SecureHashType')
+        .sort(([a], [b]) => a.localeCompare(b));
+
+      const signData = new URLSearchParams(filteredEntries.reduce<Record<string, string>>((acc, [key, value]) => {
+        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+          acc[key] = String(value);
         }
+        return acc;
+      }, {})).toString();
 
-        const created = this.paymentRepository.create({
-          orderId: legacyOrder.id,
-          userId: legacyOrder.userId,
-          amount: legacyOrder.tongTien,
-          method,
-          status: PaymentStatus.SUCCESS,
-          transactionId: null,
-          reference: `legacy-${legacyOrder.id}`,
-          description: 'Migrated from legacy orders table',
-          responseCode: this.mapLegacyOrderStatusCode(legacyOrder.trangThai),
-          responseMessage: 'Legacy order migrated to completed payment',
-        });
-
-        const saved = await this.paymentRepository.save(created);
-        migrated.push({
-          orderId: legacyOrder.id,
-          paymentId: saved.id,
-          orderStatus: 'COMPLETED',
-          paymentStatus: saved.status,
-        });
-      }
-
-      return ApiResponse.success(migrated, 'Legacy orders migrated to completed payments');
+      const computed = createHmac('sha512', secretKey).update(Buffer.from(signData, 'utf-8')).digest('hex');
+      return computed.toLowerCase() === secureHash.toLowerCase();
+    } catch (error) {
+      this.logger.error('Checksum validation failed', error instanceof Error ? error.stack : String(error));
+      return false;
     }
-
-    private getStrategy(method: PaymentMethod): IPaymentStrategy {
-      const strategy = this.strategies.get(method);
-      if (!strategy) {
-        throw new BadRequestException(`Payment method ${method} is not supported`);
-      }
-
-      return strategy;
-    }
-
-    private async findPaymentOrThrow(id: string): Promise<Payment> {
-      const payment = await this.paymentRepository.findOne({ where: { id } });
-      if (!payment) {
-        throw new NotFoundException(`Payment ${id} not found`);
-      }
-
-      return payment;
-    }
-
-    private async findPaymentByReferenceOrThrow(callbackData: any, callbackResult: { reference?: string }): Promise<Payment> {
-      const rawReference =
-        callbackResult.reference ||
-        callbackData?.reference ||
-        callbackData?.vnp_TxnRef ||
-        callbackData?.orderId ||
-        callbackData?.order_id;
-
-      if (!rawReference) {
-        throw new BadRequestException('Cannot resolve payment reference from callback');
-      }
-
-      const orderId = typeof rawReference === 'string' && rawReference.includes('-')
-        ? rawReference.split('-')[0]
-        : rawReference;
-
-      const payment = await this.paymentRepository.findOne({
-        where: [
-          { reference: rawReference },
-          { orderId },
-        ],
-        order: { createdAt: 'DESC' },
-      });
-
-      if (!payment) {
-        throw new NotFoundException(`Payment for reference ${rawReference} not found`);
-      }
-
-      return payment;
-    }
-
-    private mapLegacyPaymentMethod(method?: string | null): PaymentMethod {
-      const normalized = (method || '').toUpperCase();
-      if (normalized.includes('VNPAY')) {
-        return PaymentMethod.VNPAY;
-      }
-      if (normalized.includes('MOMO')) {
-        return PaymentMethod.MOMO;
-      }
-      return PaymentMethod.COD;
-    }
-
-    private mapLegacyOrderStatusCode(status: LegacyOrderStatus): string {
-      if (status === 'PAID' || status === 'COMPLETED' || status === 'CONFIRMED') {
-        return '00';
-      }
-      if (status === 'CANCELLED') {
-        return '24';
-      }
-      return '10';
-    }
-      }
+  }
+}

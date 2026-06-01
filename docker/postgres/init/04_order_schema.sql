@@ -6,8 +6,11 @@ DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_status') THEN
     CREATE TYPE order_status AS ENUM (
-      'PENDING', 'CONFIRMED', 'BAKING', 'READY', 'COMPLETED', 'CANCELLED'
+      'PENDING', 'CONFIRMED', 'BAKING', 'READY', 'COMPLETED', 'CANCELLED', 'PAID', 'REFUND_PENDING'
     );
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'payment_method') THEN
+    CREATE TYPE payment_method AS ENUM ('CASH', 'VNPAY', 'STRIPE', 'SEPAY', 'MOMO', 'COD');
   END IF;
 END
 $$;
@@ -18,6 +21,11 @@ CREATE TABLE orders (
   status           order_status DEFAULT 'PENDING',
   total_amount     DECIMAL(10,2) NOT NULL,
   shipping_address JSONB NOT NULL,
+  payment_method   payment_method DEFAULT 'CASH',
+  bank_account_name VARCHAR(150),
+  bank_account_number VARCHAR(64),
+  bank_name        VARCHAR(120),
+  refund_proof_image_url VARCHAR(512),
   note             TEXT,
   cancelled_reason TEXT,
   cancelled_by     VARCHAR(50),

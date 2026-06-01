@@ -1,7 +1,7 @@
 export enum PaymentMethod {
+  STRIPE = 'STRIPE',
+  SEPAY = 'SEPAY',
   VNPAY = 'VNPAY',
-  MOMO = 'MOMO',
-  COD = 'COD',
 }
 
 export enum PaymentStatus {

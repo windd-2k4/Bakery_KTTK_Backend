@@ -98,9 +98,11 @@ export class OrderController {
     await this.orderService.handleStockReservationFailed(payload);
   }
 
-  @EventPattern('payment.completed')
-  async handlePaymentCompleted(@Payload() payload: { orderId: string, transactionId?: string }) {
-    this.logger.log(`Received payment.completed event for order ${payload.orderId}`);
-    await this.orderService.handlePaymentCompleted(payload);
+  @EventPattern('bakery.payment.completed')
+  async handlePaymentCompleted(@Payload() message: { eventName: string, payload: { orderId: string, transactionId?: string } }) {
+    this.logger.log(`Received bakery.payment.completed event for order ${message?.payload?.orderId}`);
+    if (message?.payload) {
+      await this.orderService.handlePaymentCompleted(message.payload);
+    }
   }
 }

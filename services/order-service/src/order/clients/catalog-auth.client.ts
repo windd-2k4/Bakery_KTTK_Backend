@@ -36,7 +36,8 @@ export class CatalogAuthClient {
       throw new BadGatewayException('Unable to validate product data from product-service');
     }
 
-    return (await response.json()) as ProductSnapshot;
+    const result = await response.json();
+    return (result.data ? result.data : result) as ProductSnapshot;
   }
 
   async getUserSummary(userId: string): Promise<UserSummary> {
@@ -51,7 +52,8 @@ export class CatalogAuthClient {
       throw new BadGatewayException('Unable to validate user data from auth-service');
     }
 
-    return (await response.json()) as UserSummary;
+    const result = await response.json();
+    return (result.data ? result.data : result) as UserSummary;
   }
 
   private async safeFetch(url: string, serviceName: string): Promise<Response> {
