@@ -1,11 +1,6 @@
-# docker-compose.yml
 version: '3.8'
- 
+
 services:
- 
-  # ╔══════════════════════════════╗
-  # ║   PostgreSQL — Main Database ║
-  # ╚══════════════════════════════╝
   postgres:
     image: postgres:15-alpine
     container_name: bakery_postgres
@@ -17,23 +12,16 @@ services:
     ports:
       - '5432:5432'
     volumes:
-      # Persist data — không mất khi docker compose down
       - postgres_data:/var/lib/postgresql/data
-      # Auto-run SQL scripts khi lần đầu khởi động
       - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      # Check the actual POSTGRES_DB so pg_isready doesn't attempt to connect
-      # to a database named after the user (which may not exist).
       test: ['CMD-SHELL', 'pg_isready -d ${POSTGRES_DB:-bakery_db} -U ${POSTGRES_USER:-bakery_user}']
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - bakery_network
- 
-  # ╔══════════════════════════════╗
-  # ║   Redis — Cache & Session    ║
-  # ╚══════════════════════════════╝
+
   redis:
     image: redis:7-alpine
     container_name: bakery_redis
@@ -50,10 +38,7 @@ services:
       retries: 5
     networks:
       - bakery_network
- 
-  # ╔══════════════════════════════╗
-  # ║   RabbitMQ — Message Broker  ║
-  # ╚══════════════════════════════╝
+
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     container_name: bakery_rabbitmq
@@ -61,11 +46,10 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-bakery_user}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-bakery_pass}
-      # Tự động load queues/exchanges từ file definitions
       RABBITMQ_LOAD_DEFINITIONS: /etc/rabbitmq/definitions.json
     ports:
-      - '5672:5672'     # AMQP port
-      - '15672:15672'   # Management UI
+      - '5672:5672'
+      - '15672:15672'
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
       - ./docker/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
@@ -76,8 +60,64 @@ services:
       retries: 5
     networks:
       - bakery_network
- 
-# ── VOLUMES (dữ liệu persist khi restart) ──────────────
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+    container_name: bakery_api_gateway
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      NODE_ENV: ${NODE_ENV:-development}
+      DOCKER_ENV: 'true'
+      PAYMENT_SERVICE_URL: http://payment-service:3004
+      PRODUCT_SERVICE_URL: http://product-service:3002
+      AUTH_SERVICE_URL: http://auth-service:3000
+    ports:
+      - '3000:3000'
+    depends_on:
+      - payment-service
+    networks:
+      - bakery_network
+
+  payment-service:
+    build:
+      context: ./services/payment-service
+    container_name: bakery_payment_service
+    restart: unless-stopped
+    environment:
+      PORT: 3004
+      NODE_ENV: ${NODE_ENV:-development}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: ${POSTGRES_USER:-bakery_user}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-bakery_pass}
+      DB_DATABASE: ${POSTGRES_DB:-bakery_db}
+      DATABASE_URL: postgresql://bakery_user:bakery_pass@postgres:5432/bakery_db
+      ORDER_SERVICE_URL: http://order-service:3003
+      RABBITMQ_URL: amqp://bakery_user:bakery_pass@rabbitmq:5672
+      RABBITMQ_PAYMENT_EXCHANGE: bakery.events
+      RABBITMQ_PAYMENT_QUEUE: bakery.payment.queue
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_CHECKOUT_BASE_URL: ${STRIPE_CHECKOUT_BASE_URL:-https://checkout.stripe.com/c/pay}
+      SEPAY_API_KEY: ${SEPAY_API_KEY:-}
+      SEPAY_WEBHOOK_TOKEN: ${SEPAY_WEBHOOK_TOKEN:-}
+      SEPAY_ACCOUNT_NO: ${SEPAY_ACCOUNT_NO:-0123456789}
+      SEPAY_ACCOUNT_NAME: ${SEPAY_ACCOUNT_NAME:-BAKERY KTTK}
+      SEPAY_BANK_CODE: ${SEPAY_BANK_CODE:-970422}
+      VNPAY_TMN_CODE: ${VNPAY_TMN_CODE:-}
+      VNPAY_SECRET_KEY: ${VNPAY_SECRET_KEY:-}
+      VNPAY_PAYMENT_URL: ${VNPAY_PAYMENT_URL:-https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
+      VNPAY_RETURN_URL: ${VNPAY_RETURN_URL:-http://localhost:3004/payments/api/callback/vnpay}
+    ports:
+      - '3004:3004'
+    depends_on:
+      - postgres
+      - rabbitmq
+    networks:
+      - bakery_network
+
 volumes:
   postgres_data:
     driver: local
@@ -85,8 +125,7 @@ volumes:
     driver: local
   rabbitmq_data:
     driver: local
- 
-# ── NETWORK ────────────────────────────────────────────
+
 networks:
   bakery_network:
     driver: bridge

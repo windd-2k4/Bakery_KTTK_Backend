@@ -174,12 +174,11 @@ app.use('/api/cart', createProxyMiddleware({
 app.use('/api/orders', createProxyMiddleware({ 
   target: SERVICES.order, 
   changeOrigin: true,
-  pathRewrite: { '^/api/orders': '' },
-  logLevel: 'warn',
+  pathRewrite: { '^/': '/orders/' },
+  logLevel: 'debug',
   onProxyReq: onProxyReqWithLog,
   onError: onProxyError
 }));
-
 app.use('/api/payments', createProxyMiddleware({ 
   target: SERVICES.payment, 
   changeOrigin: true,

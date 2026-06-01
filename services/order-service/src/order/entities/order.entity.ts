@@ -48,6 +48,7 @@ export class Order {
   completedAt: Date | null;
 
   @Column({
+    name: 'payment_method',
     type: 'enum',
     enum: PaymentMethod,
     enumName: 'payment_method',

@@ -1,109 +1,71 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { IPaymentStrategy, PaymentStrategyResult } from './payment.strategy';
 
 @Injectable()
 export class VnpayStrategy implements IPaymentStrategy {
-  private readonly logger = new Logger(VnpayStrategy.name);
-  private readonly vnpayUrl = 'https://sandbox.vnpayment.vn/paygate/pay.html';
+  constructor(private readonly configService: ConfigService) {}
 
-  constructor(private config: ConfigService) {}
- 
-  async createPayment(orderId: string, amount: number,
-                      userId: string, description?: string): Promise<PaymentStrategyResult> {
-    const params = {
-      vnp_Version:    '2.1.0',
-      vnp_Command:    'pay',
-      vnp_TmnCode:    this.config.get('VNPAY_TMN_CODE') || '',
-      vnp_Amount:     (amount * 100).toString(),
-      vnp_CurrCode:   'VND',
-      vnp_TxnRef:     `${orderId}-${Date.now()}`,
-      vnp_OrderInfo:  description || `Payment for order ${orderId}`,
-      vnp_ReturnUrl:  this.config.get('VNPAY_RETURN_URL') || 'http://localhost:3002/payment/vnpay-callback',
-      vnp_CreateDate: new Date().toISOString().replace(/[-:T.Z]/g, '').substring(0, 14),
-      vnp_IpAddr:     '127.0.0.1',
+  async createPayment(orderId: string, amount: number, description?: string): Promise<PaymentStrategyResult> {
+    const returnUrl = this.configService.get<string>('VNPAY_RETURN_URL') ?? 'http://localhost:3000/payment-return';
+    const tmnCode = this.configService.get<string>('VNPAY_TMN_CODE') ?? 'DEMO';
+    const secretKey = this.configService.get<string>('VNPAY_SECRET_KEY') ?? 'DEMO_SECRET';
+    const baseUrl = this.configService.get<string>('VNPAY_PAYMENT_URL') ?? 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html';
+    const txnRef = `VNPAY-${orderId}-${Date.now()}`;
+
+    const params: Record<string, string> = {
+      vnp_Version: '2.1.0',
+      vnp_Command: 'pay',
+      vnp_TmnCode: tmnCode,
+      vnp_Amount: String(Math.round(amount * 100)),
+      vnp_CurrCode: 'VND',
+      vnp_TxnRef: txnRef,
+      vnp_OrderInfo: description ?? `Payment for order ${orderId}`,
+      vnp_OrderType: 'other',
+      vnp_Locale: 'vn',
+      vnp_ReturnUrl: returnUrl,
+      vnp_CreateDate: this.formatDate(new Date()),
     };
- 
-    const sortedParams = this.sortObject(params);
-    const signData = new URLSearchParams(sortedParams).toString();
-    const hmac = crypto.createHmac('sha512', this.config.get('VNPAY_SECRET_KEY') || '');
-    const signed = hmac.update(Buffer.from(signData, 'utf-8')).digest('hex');
- 
-    const paymentUrl = `${this.vnpayUrl}?${signData}&vnp_SecureHash=${signed}`;
- 
+
+    const sorted = this.sortObject(params);
+    const signData = new URLSearchParams(sorted).toString();
+    const secureHash = crypto.createHmac('sha512', secretKey).update(Buffer.from(signData, 'utf-8')).digest('hex');
+    const paymentUrl = `${baseUrl}?${signData}&vnp_SecureHash=${secureHash}`;
+
     return {
       success: true,
+      reference: txnRef,
       paymentUrl,
-      reference: sortedParams.vnp_TxnRef,
-      responseMessage: 'Payment URL generated successfully',
+      providerData: {
+        provider: 'VNPAY',
+        params: sorted,
+      },
     };
   }
 
-  async verifyPayment(transactionId: string, amount: number): Promise<boolean> {
-    try {
-      this.logger.debug(`Verifying VNPay transaction: ${transactionId}`);
-      return true;
-    } catch (error) {
-      this.logger.error('VNPay verification failed', error);
-      return false;
-    }
-  }
- 
-  async handleCallback(callbackData: Record<string, any>): Promise<PaymentStrategyResult> {
-    try {
-      const { vnp_ResponseCode, vnp_TransactionNo, vnp_Amount, vnp_OrderInfo, ...params } = callbackData;
-
-      if (vnp_ResponseCode === '00') {
-        return {
-          success: true,
-          transactionId: vnp_TransactionNo,
-          responseCode: vnp_ResponseCode,
-          responseMessage: 'Payment successful',
-        };
-      } else {
-        return {
-          success: false,
-          responseCode: vnp_ResponseCode,
-          responseMessage: 'Payment failed',
-        };
-      }
-    } catch (error) {
-      this.logger.error('VNPay callback handling failed', error);
-      return {
-        success: false,
-        responseMessage: 'Callback processing failed',
-      };
-    }
+  async handleWebhook(payload: Record<string, unknown>): Promise<PaymentStrategyResult> {
+    return {
+      success: payload?.['vnp_ResponseCode'] === '00',
+      reference: typeof payload?.['vnp_TxnRef'] === 'string' ? String(payload['vnp_TxnRef']) : undefined,
+      transactionId: typeof payload?.['vnp_TransactionNo'] === 'string' ? String(payload['vnp_TransactionNo']) : undefined,
+      responseCode: typeof payload?.['vnp_ResponseCode'] === 'string' ? String(payload['vnp_ResponseCode']) : undefined,
+      responseMessage: 'VNPAY webhook handled',
+      providerData: payload,
+    };
   }
 
-  async refund(transactionId: string, amount: number): Promise<PaymentStrategyResult> {
-    try {
-      this.logger.log(`Processing VNPay refund for transaction ${transactionId}`);
-      return {
-        success: true,
-        transactionId,
-        responseMessage: 'Refund processed successfully',
-      };
-    } catch (error) {
-      this.logger.error('VNPay refund failed', error);
-      return {
-        success: false,
-        responseMessage: `VNPay refund error: ${error.message}`,
-      };
-    }
+  private formatDate(date: Date): string {
+    const pad = (value: number) => String(value).padStart(2, '0');
+    return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
   }
 
-  private verifyCallbackSignature(data: Record<string, any>): boolean {
-    const { vnp_SecureHash, ...params } = data;
-    const sortedParams = this.sortObject(params);
-    const signData = new URLSearchParams(sortedParams).toString();
-    const hmac = crypto.createHmac('sha512', this.config.get('VNPAY_SECRET_KEY') || '');
-    const signed = hmac.update(Buffer.from(signData, 'utf-8')).digest('hex');
-    return signed === vnp_SecureHash;
-  }
- 
-  private sortObject(obj: Record<string, any>) {
-    return Object.fromEntries(Object.entries(obj).sort(([a], [b]) => a.localeCompare(b)));
+  private sortObject(obj: Record<string, string>): Record<string, string> {
+    return Object.keys(obj)
+      .sort()
+      .reduce<Record<string, string>>((acc, key) => {
+        acc[key] = obj[key];
+        return acc;
+      }, {});
   }
 }
