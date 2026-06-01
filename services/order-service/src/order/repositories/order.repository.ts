@@ -29,6 +29,11 @@ export class OrderRepository implements IOrderRepository {
     return this.orderOrmRepo.findOne({
       where: { id },
       relations: ['items', 'statusLogs'],
+      order: {
+        statusLogs: {
+          createdAt: 'DESC',
+        },
+      },
     });
   }
 

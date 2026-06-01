@@ -247,6 +247,11 @@ export class OrderService {
 
     await this.orderRepository.saveStatusLog(statusLog);
     await this.orderPublisher.publishStatusChanged(updatedOrder, previousStatus);
+    
+    if (updatedOrder.status === OrderStatus.CANCELLED) {
+      await this.orderPublisher.publishOrderCancelled(updatedOrder);
+    }
+    
     this.logger.log(`Order ${id} status changed from ${previousStatus} to ${updateStatusDto.status}`);
     return updatedOrder;
   }
@@ -277,6 +282,11 @@ export class OrderService {
     });
     await this.orderRepository.saveStatusLog(statusLog);
     await this.orderPublisher.publishStatusChanged(updatedOrder, previousStatus);
+    
+    if (updatedOrder.status === OrderStatus.CANCELLED) {
+      await this.orderPublisher.publishOrderCancelled(updatedOrder);
+    }
+
     this.logger.log(`Order ${id} cancel requested, changed to ${order.status}`);
     return updatedOrder;
   }
