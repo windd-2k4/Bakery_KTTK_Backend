@@ -24,6 +24,7 @@ CREATE TABLE products (
   image_url     VARCHAR(500),
   images        TEXT[],
   is_available  BOOLEAN DEFAULT true,
+  status        VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
   avg_rating    DECIMAL(3,2) DEFAULT 0,
   review_count  INTEGER DEFAULT 0,
   created_at    TIMESTAMP DEFAULT NOW(),

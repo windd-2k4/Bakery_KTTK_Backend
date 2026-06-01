@@ -64,173 +64,6 @@ VALUES
 );
 
 -- =========================================================
--- CATEGORIES
--- =========================================================
-
-INSERT INTO categories (
-    name,
-    slug,
-    description,
-    image_url
-)
-VALUES
-
-(
-    'Bánh Sinh Nhật',
-    'birthday-cakes',
-    'Các loại bánh kem sinh nhật cao cấp',
-    'https://images.unsplash.com/photo-1578985545062-69928b1d9587'
-),
-
-(
-    'Bánh Mì',
-    'bread',
-    'Bánh mì tươi mỗi ngày',
-    'https://images.unsplash.com/photo-1509440159596-0249088772ff'
-),
-
-(
-    'Bánh Ngọt',
-    'sweet-cakes',
-    'Cookies, mousse, tiramisu',
-    'https://images.unsplash.com/photo-1486427944299-d1955d23e34d'
-);
-
--- =========================================================
--- PRODUCTS
--- =========================================================
-
-INSERT INTO products (
-    category_id,
-    name,
-    slug,
-    description,
-    price,
-    stock,
-    image_url,
-    is_available,
-    avg_rating,
-    review_count
-)
-SELECT
-    c.id,
-    'Tiramisu Cake',
-    'tiramisu-cake',
-    'Bánh tiramisu kiểu Ý với mascarpone và cacao.',
-    335000,
-    10,
-    'https://images.unsplash.com/photo-1571877227200-a0d98ea607e9',
-    true,
-    4.8,
-    12
-FROM categories c
-WHERE c.slug = 'birthday-cakes';
-
-INSERT INTO products (
-    category_id,
-    name,
-    slug,
-    description,
-    price,
-    stock,
-    image_url,
-    is_available,
-    avg_rating,
-    review_count
-)
-SELECT
-    c.id,
-    'Mango Mousse',
-    'mango-mousse',
-    'Bánh mousse xoài mát lạnh.',
-    325000,
-    15,
-    'https://images.unsplash.com/photo-1551024601-bec78aea704b',
-    true,
-    4.6,
-    8
-FROM categories c
-WHERE c.slug = 'birthday-cakes';
-
-INSERT INTO products (
-    category_id,
-    name,
-    slug,
-    description,
-    price,
-    stock,
-    image_url,
-    is_available,
-    avg_rating,
-    review_count
-)
-SELECT
-    c.id,
-    'Baguette',
-    'baguette',
-    'Bánh mì baguette kiểu Pháp.',
-    15000,
-    50,
-    'https://images.unsplash.com/photo-1608198093002-ad4e005484ec',
-    true,
-    4.5,
-    20
-FROM categories c
-WHERE c.slug = 'bread';
-
-INSERT INTO products (
-    category_id,
-    name,
-    slug,
-    description,
-    price,
-    stock,
-    image_url,
-    is_available,
-    avg_rating,
-    review_count
-)
-SELECT
-    c.id,
-    'Croissant',
-    'croissant',
-    'Croissant bơ nhiều lớp.',
-    17000,
-    40,
-    'https://images.unsplash.com/photo-1586985289688-ca3cf47d3e6e',
-    true,
-    4.7,
-    15
-FROM categories c
-WHERE c.slug = 'bread';
-
-INSERT INTO products (
-    category_id,
-    name,
-    slug,
-    description,
-    price,
-    stock,
-    image_url,
-    is_available,
-    avg_rating,
-    review_count
-)
-SELECT
-    c.id,
-    'Dark Chocolate Cookies',
-    'dark-chocolate-cookies',
-    'Cookies chocolate đậm vị cacao.',
-    55000,
-    100,
-    'https://images.unsplash.com/photo-1499636136210-6f4ee915583e',
-    true,
-    4.9,
-    30
-FROM categories c
-WHERE c.slug = 'sweet-cakes';
-
--- =========================================================
 -- CARTS
 -- =========================================================
 
@@ -254,7 +87,7 @@ SELECT
     2
 FROM carts c
 JOIN users u ON c.user_id = u.id
-JOIN products p ON p.slug = 'croissant'
+JOIN products p ON p.slug = 'p027'
 WHERE u.email = 'customer@test.com';
 
 -- =========================================================
@@ -271,7 +104,7 @@ INSERT INTO orders (
 SELECT
     u.id,
     'READY',
-    352000,
+    335000,
     '{
       "receiver": "Customer Test",
       "phone": "0900000003",
@@ -301,7 +134,7 @@ SELECT
     1,
     p.price
 FROM orders o
-JOIN products p ON p.slug = 'tiramisu-cake'
+JOIN products p ON p.slug = 'p002'
 LIMIT 1;
 
 -- =========================================================
@@ -349,11 +182,11 @@ SELECT
     5,
     'Bánh rất ngon và đẹp!',
     ARRAY[
-        'https://images.unsplash.com/photo-1551024601-bec78aea704b'
+        'https://res.cloudinary.com/dektqvylq/image/upload/v1764240276/tiramisu_cake_16a01603c84a4217826a59da6c6f6cfd_master_kztodj.jpg'
     ]
 FROM users u
 JOIN orders o ON o.user_id = u.id
-JOIN products p ON p.slug = 'tiramisu-cake'
+JOIN products p ON p.slug = 'p002'
 WHERE u.email = 'customer@test.com'
 LIMIT 1;
 
@@ -372,7 +205,7 @@ BEGIN
             u.id,
             p.id
         FROM users u
-        JOIN products p ON p.slug = 'mango-mousse'
+        JOIN products p ON p.slug = 'p005'
         WHERE u.email = 'customer@test.com';
     END IF;
 END

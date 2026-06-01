@@ -35,6 +35,7 @@ REVOKE ALL ON SCHEMA public FROM PUBLIC;
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC;
 
 -- All service roles can resolve objects in schema public.
+GRANT USAGE ON SCHEMA public TO bakery_user;
 GRANT USAGE ON SCHEMA public TO auth_service_user;
 GRANT USAGE ON SCHEMA public TO product_service_user;
 GRANT USAGE ON SCHEMA public TO cart_service_user;
@@ -46,8 +47,16 @@ GRANT USAGE ON SCHEMA public TO review_service_user;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.users TO auth_service_user;
 
 -- Product service: categories, products
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.categories TO bakery_user;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.products TO bakery_user;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.categories TO product_service_user;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.products TO product_service_user;
+
+-- Compatibility layer: legacy pastry tables used by the NestJS compatibility API.
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.legacy_pastries TO bakery_user;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.legacy_pastry_category TO bakery_user;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.legacy_pastries TO product_service_user;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.legacy_pastry_category TO product_service_user;
 
 -- Cart service: carts, cart_items
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.carts TO cart_service_user;
