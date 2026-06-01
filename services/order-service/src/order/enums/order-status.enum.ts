@@ -1,5 +1,6 @@
 export enum OrderStatus {
   PENDING   = 'PENDING',
+  PAID      = 'PAID',
   CONFIRMED = 'CONFIRMED',
   BAKING    = 'BAKING',
   READY     = 'READY',
@@ -12,8 +13,12 @@ export enum OrderStatus {
 export const TRANSITIONS: Record<string, {
   from: OrderStatus[], role: string[]
 }> = {
-  [OrderStatus.CONFIRMED]: {
+  [OrderStatus.PAID]: {
     from:  [OrderStatus.PENDING],
+    role:  ['SYSTEM', 'CUSTOMER'],
+  },
+  [OrderStatus.CONFIRMED]: {
+    from:  [OrderStatus.PENDING, OrderStatus.PAID],
     role:  ['ADMIN'],
   },
   [OrderStatus.BAKING]: {
@@ -29,8 +34,8 @@ export const TRANSITIONS: Record<string, {
     role:  ['CUSTOMER'],
   },
   [OrderStatus.CANCELLED]: {
-    from:  [OrderStatus.PENDING, OrderStatus.CONFIRMED],
-    role:  ['CUSTOMER', 'ADMIN'],
+    from:  [OrderStatus.PENDING, OrderStatus.PAID, OrderStatus.CONFIRMED],
+    role:  ['CUSTOMER', 'ADMIN', 'SYSTEM'],
   },
   [OrderStatus.REFUND_PENDING]: {
     from: [OrderStatus.CANCELLED, OrderStatus.COMPLETED],

@@ -46,4 +46,19 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @IsString()
+  paymentMethod: string;
+
+  @IsOptional()
+  @IsString()
+  bankAccountName?: string;
+
+  @IsOptional()
+  @IsString()
+  bankAccountNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  bankName?: string;
 }

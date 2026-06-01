@@ -10,6 +10,7 @@ import {
   Logger,
   ParseUUIDPipe,
 } from '@nestjs/common';
+import { EventPattern, Payload } from '@nestjs/microservices';
 import { OrderService } from './order.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
@@ -67,9 +68,12 @@ export class OrderController {
   }
 
   @Post(':id/cancel')
-  async cancel(@Param('id', ParseUUIDPipe) id: string): Promise<ApiResponse<Order>> {
+  async cancel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('reason') reason?: string,
+  ): Promise<ApiResponse<Order>> {
     this.logger.log(`Cancelling order ${id}`);
-    const cancelledOrder = await this.orderService.cancel(id);
+    const cancelledOrder = await this.orderService.cancel(id, 'CUSTOMER', reason);
     return ApiResponse.success(cancelledOrder, 'Order cancelled');
   }
 
@@ -78,5 +82,25 @@ export class OrderController {
     this.logger.log(`Deleting order ${id}`);
     await this.orderService.remove(id);
     return ApiResponse.success({ deleted: true }, 'Order deleted successfully');
+  }
+
+  // --- Saga & Async Event Listeners ---
+
+  @EventPattern('stock.reserved')
+  async handleStockReserved(@Payload() payload: { orderId: string }) {
+    this.logger.log(`Received stock.reserved event for order ${payload.orderId}`);
+    await this.orderService.handleStockReserved(payload);
+  }
+
+  @EventPattern('stock.reservation.failed')
+  async handleStockReservationFailed(@Payload() payload: { orderId: string, reason?: string }) {
+    this.logger.log(`Received stock.reservation.failed event for order ${payload.orderId}`);
+    await this.orderService.handleStockReservationFailed(payload);
+  }
+
+  @EventPattern('payment.completed')
+  async handlePaymentCompleted(@Payload() payload: { orderId: string, transactionId?: string }) {
+    this.logger.log(`Received payment.completed event for order ${payload.orderId}`);
+    await this.orderService.handlePaymentCompleted(payload);
   }
 }
