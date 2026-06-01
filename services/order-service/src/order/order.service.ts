@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { Order } from './entities/order.entity';
+import { OrderItem } from './entities/order-item.entity';
+import { OrderStatusLog } from './entities/order-status-log.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
@@ -75,6 +77,10 @@ export class OrderService {
           shippingAddress: createOrderDto.shippingAddress,
           note: createOrderDto.note ?? null,
           status: OrderStatus.PENDING,
+          paymentMethod: createOrderDto.paymentMethod as any,
+          bankAccountName: createOrderDto.bankAccountName,
+          bankAccountNumber: createOrderDto.bankAccountNumber,
+          bankName: createOrderDto.bankName,
         });
 
         const persistedOrder = await orderRepo.save(orderEntity);
@@ -115,6 +121,60 @@ export class OrderService {
     } catch (error) {
       this.logger.error('Failed to create order', error);
       throw error;
+    }
+  }
+
+  async handleStockReserved(payload: { orderId: string }): Promise<void> {
+    this.logger.log(`Stock reserved for order ${payload.orderId}. Proceeding with payment...`);
+    // Status can remain PENDING or change to another status if defined
+    // We could emit another event to notify frontend via WebSocket
+  }
+
+  async handleStockReservationFailed(payload: { orderId: string, reason?: string }): Promise<void> {
+    this.logger.log(`Stock reservation failed for order ${payload.orderId}: ${payload.reason}. Cancelling order...`);
+    const order = await this.orderRepository.findOrderById(payload.orderId);
+    if (!order) return;
+
+    if (order.status !== OrderStatus.CANCELLED) {
+      const previousStatus = order.status;
+      order.status = OrderStatus.CANCELLED;
+      order.cancelledBy = 'SYSTEM';
+      order.cancelledReason = payload.reason ?? 'Stock Reservation Failed (Hết hàng)';
+
+      const updatedOrder = await this.orderRepository.saveOrder(order);
+      const statusLog = this.orderRepository.createStatusLog({
+        orderId: order.id,
+        fromStatus: previousStatus,
+        toStatus: OrderStatus.CANCELLED,
+        actorRole: 'SYSTEM',
+        note: order.cancelledReason,
+      });
+
+      await this.orderRepository.saveStatusLog(statusLog);
+      await this.orderPublisher.publishStatusChanged(updatedOrder, previousStatus);
+    }
+  }
+
+  async handlePaymentCompleted(payload: { orderId: string, transactionId?: string }): Promise<void> {
+    this.logger.log(`Payment completed for order ${payload.orderId}. Updating status...`);
+    const order = await this.orderRepository.findOrderById(payload.orderId);
+    if (!order) return;
+
+    if (order.status === OrderStatus.PENDING || order.status === OrderStatus.CONFIRMED) {
+      const previousStatus = order.status;
+      order.status = OrderStatus.PAID;
+      
+      const updatedOrder = await this.orderRepository.saveOrder(order);
+      const statusLog = this.orderRepository.createStatusLog({
+        orderId: order.id,
+        fromStatus: previousStatus,
+        toStatus: OrderStatus.PAID,
+        actorRole: 'SYSTEM',
+        note: `Payment confirmed. Transaction ID: ${payload.transactionId ?? 'N/A'}`,
+      });
+
+      await this.orderRepository.saveStatusLog(statusLog);
+      await this.orderPublisher.publishStatusChanged(updatedOrder, previousStatus);
     }
   }
 
@@ -170,6 +230,9 @@ export class OrderService {
     if (updateStatusDto.status === OrderStatus.CANCELLED) {
       order.cancelledBy = actorRole;
       order.cancelledReason = updateStatusDto.note ?? order.cancelledReason;
+      if (updateStatusDto.refundProofImageUrl && previousStatus === OrderStatus.REFUND_PENDING) {
+        order.refundProofImageUrl = updateStatusDto.refundProofImageUrl;
+      }
     }
 
     const updatedOrder = await this.orderRepository.saveOrder(order);
@@ -188,27 +251,33 @@ export class OrderService {
     return updatedOrder;
   }
 
-  async cancel(id: string): Promise<Order> {
+  async cancel(id: string, actorRole: string = 'SYSTEM', reason?: string): Promise<Order> {
     const order = await this.findOne(id);
-    if ([OrderStatus.COMPLETED, OrderStatus.CANCELLED].includes(order.status)) {
+    if ([OrderStatus.COMPLETED, OrderStatus.CANCELLED, OrderStatus.REFUND_PENDING].includes(order.status)) {
       throw new BadRequestException(`Cannot cancel order in ${order.status} status`);
     }
 
     const previousStatus = order.status;
-    order.status = OrderStatus.CANCELLED;
-    order.cancelledBy = 'SYSTEM';
+    const isPaid = (previousStatus === OrderStatus.PAID);
+
+    order.status = isPaid ? OrderStatus.REFUND_PENDING : OrderStatus.CANCELLED;
+    order.cancelledBy = actorRole;
+    if (reason) {
+      order.cancelledReason = reason;
+    }
+
     const updatedOrder = await this.orderRepository.saveOrder(order);
 
     const statusLog = this.orderRepository.createStatusLog({
       orderId: order.id,
       fromStatus: previousStatus,
-      toStatus: OrderStatus.CANCELLED,
-      actorRole: 'SYSTEM',
-      note: order.cancelledReason ?? 'Cancelled by system',
+      toStatus: order.status,
+      actorRole,
+      note: order.cancelledReason ?? `Cancelled by ${actorRole}`,
     });
     await this.orderRepository.saveStatusLog(statusLog);
     await this.orderPublisher.publishStatusChanged(updatedOrder, previousStatus);
-    this.logger.log(`Order ${id} cancelled`);
+    this.logger.log(`Order ${id} cancel requested, changed to ${order.status}`);
     return updatedOrder;
   }
 

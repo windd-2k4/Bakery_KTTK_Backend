@@ -9,6 +9,7 @@ import {
 import { OrderStatus } from '../enums/order-status.enum';
 import { OrderItem } from './order-item.entity';
 import { OrderStatusLog } from './order-status-log.entity';
+import { PaymentMethod } from '../enums/payment-method.enum';
 
 @Entity('orders')
 export class Order {
@@ -45,6 +46,26 @@ export class Order {
 
   @Column({ name: 'completed_at', type: 'timestamp', nullable: true })
   completedAt: Date | null;
+
+  @Column({
+    type: 'enum',
+    enum: PaymentMethod,
+    enumName: 'payment_method',
+    default: PaymentMethod.CASH,
+  })
+  paymentMethod: PaymentMethod;
+
+  @Column({ name: 'bank_account_name', type: 'varchar', length: 150, nullable: true })
+  bankAccountName: string | null;
+
+  @Column({ name: 'bank_account_number', type: 'varchar', length: 64, nullable: true })
+  bankAccountNumber: string | null;
+
+  @Column({ name: 'bank_name', type: 'varchar', length: 120, nullable: true })
+  bankName: string | null;
+
+  @Column({ name: 'refund_proof_image_url', type: 'varchar', length: 512, nullable: true })
+  refundProofImageUrl: string | null;
 
   @OneToMany(() => OrderItem, (item) => item.order, { cascade: true, eager: true })
   items: OrderItem[];

@@ -11,6 +11,10 @@ export class UpdateStatusDto {
   note?: string;
 
   @IsOptional()
+  @IsString()
+  refundProofImageUrl?: string;
+
+  @IsOptional()
   @IsUUID()
   changedBy?: string;
 
