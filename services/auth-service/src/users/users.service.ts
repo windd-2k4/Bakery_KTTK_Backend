@@ -161,4 +161,21 @@ export class UsersService {
 
     return 'Unknown User';
   }
+
+  async findByRole(role: string): Promise<User[]> {
+    return this.userRepository.find({ where: { role } });
+  }
+
+  async update(id: string, updateData: Partial<User>): Promise<User> {
+    await this.userRepository.update(id, updateData);
+    const updatedUser = await this.findById(id);
+    if (!updatedUser) {
+      throw new Error('User not found after update');
+    }
+    return updatedUser;
+  }
+
+  async remove(id: string): Promise<void> {
+    await this.userRepository.delete(id);
+  }
 }

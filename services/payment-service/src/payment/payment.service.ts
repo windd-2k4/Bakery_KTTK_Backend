@@ -5,7 +5,7 @@ import { Repository } from 'typeorm';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { Payment } from './entities/payment.entity';
 import { PaymentMethod, PaymentStatus } from './enums/payment.enum';
-import { PaymentPublisher } from './publishers/payment.publisher';
+import { PaymentCompletedEvent, PaymentPublisher } from './publishers/payment.publisher';
 import { SepayStrategy } from './strategies/sepay.strategy';
 import { StripeStrategy } from './strategies/stripe.strategy';
 import { VnpayStrategy } from './strategies/vnpay.strategy';
@@ -91,8 +91,9 @@ export class PaymentService {
       payment.providerData = payload;
       payment.paidAt = new Date();
 
+      const order = await this.orderClient.getOrderById(orderId);
       const saved = await this.paymentRepository.save(payment);
-      await this.paymentPublisher.publishPaymentCompleted(this.toCompletedEvent(saved));
+      await this.paymentPublisher.publishPaymentCompleted(this.toCompletedEvent(saved, order));
 
       return { success: true, data: saved };
     } catch (error) {
@@ -121,8 +122,9 @@ export class PaymentService {
       payment.providerData = payload;
       payment.paidAt = new Date();
 
+      const order = await this.orderClient.getOrderById(matchedOrderId);
       const saved = await this.paymentRepository.save(payment);
-      await this.paymentPublisher.publishPaymentCompleted(this.toCompletedEvent(saved));
+      await this.paymentPublisher.publishPaymentCompleted(this.toCompletedEvent(saved, order));
 
       return { success: true, data: saved };
     } catch (error) {
@@ -156,8 +158,9 @@ export class PaymentService {
       payment.providerData = query;
       payment.paidAt = new Date();
 
+      const order = await this.orderClient.getOrderById(orderId);
       const saved = await this.paymentRepository.save(payment);
-      await this.paymentPublisher.publishPaymentCompleted(this.toCompletedEvent(saved));
+      await this.paymentPublisher.publishPaymentCompleted(this.toCompletedEvent(saved, order));
 
       return { success: true, data: saved };
     } catch (error) {
@@ -201,7 +204,10 @@ export class PaymentService {
     return payment;
   }
 
-  private toCompletedEvent(payment: Payment) {
+  private toCompletedEvent(
+    payment: Payment,
+    order?: { userId: string; userEmail?: string; customerName?: string },
+  ): PaymentCompletedEvent {
     return {
       paymentId: payment.id,
       orderId: payment.orderId,
@@ -209,6 +215,9 @@ export class PaymentService {
       amount: Number(payment.amount),
       providerReference: payment.providerReference ?? null,
       paidAt: payment.paidAt ?? new Date(),
+      userId: order?.userId ?? payment.userId,
+      email: order?.userEmail ?? null,
+      customerName: order?.customerName ?? null,
     };
   }
 
@@ -232,7 +241,13 @@ export class PaymentService {
 
   private extractOrderIdFromContent(content: string): string | null {
     const match = content.match(/SB([A-Za-z0-9-]+)/i);
-    return match?.[1] ?? null;
+    let extracted = match?.[1] ?? null;
+
+    if (extracted && extracted.length === 32 && !extracted.includes('-')) {
+      extracted = `${extracted.slice(0, 8)}-${extracted.slice(8, 12)}-${extracted.slice(12, 16)}-${extracted.slice(16, 20)}-${extracted.slice(20)}`;
+    }
+
+    return extracted;
   }
 
   private extractAmount(payload: Record<string, unknown>): number {

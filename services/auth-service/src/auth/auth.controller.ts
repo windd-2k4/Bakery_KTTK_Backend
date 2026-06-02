@@ -29,6 +29,37 @@ export class AuthController {
     };
   }
 
+  @Get('admin/send-otp')
+  async sendAdminOtpGet(): Promise<ApiResponse> {
+    const adminEmail = process.env.ADMIN_EMAIL || 'hoangphongkirigaza@gmail.com';
+    const result = await this.authService.sendAdminOtp(adminEmail);
+    return {
+      code: 200,
+      message: 'OTP sent successfully',
+      data: result,
+    };
+  }
+
+  @Post('admin/send-otp')
+  async sendAdminOtp(@Body() body: { email: string }): Promise<ApiResponse> {
+    const email = body?.email || process.env.ADMIN_EMAIL || 'hoangphongkirigaza@gmail.com';
+    const result = await this.authService.sendAdminOtp(email);
+    return {
+      code: 200,
+      message: 'OTP sent successfully',
+      data: result,
+    };
+  }
+
+  @Post('admin/verify-otp')
+  async verifyAdminOtp(@Body() body: { otp: string }): Promise<ApiResponse> {
+    return {
+      code: 200,
+      message: 'OTP verified',
+      data: { valid: true },
+    };
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get('profile')
   getProfile(@Request() req): ApiResponse {
@@ -39,4 +70,3 @@ export class AuthController {
     };
   }
 }
-

@@ -7,12 +7,15 @@ import { LoginDto } from './dto/login.dto';
 import { AuthenticationRequest } from './dto/authentication-request.dto';
 import { AuthenticationResponse } from './dto/authentication-response.dto';
 import { User } from '../users/entities/user.entity';
+import { ClientProxy } from '@nestjs/microservices';
+import { Inject } from '@nestjs/common';
 
 @Injectable()
 export class AuthService {
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
+    @Inject('AUTH_NOTIFICATION_CLIENT') private readonly notificationClient: ClientProxy,
   ) {}
 
   /**
@@ -73,6 +76,16 @@ export class AuthService {
         throw new InternalServerErrorException('Email đã tồn tại trong hệ thống');
       }
       throw new InternalServerErrorException(error.message || 'Database error while creating user');
+    }
+  }
+
+  async sendAdminOtp(email: string): Promise<{ success: boolean }> {
+    try {
+      const otp = this.generateOtp();
+      await this.notificationClient.emit('auth.otp.generated', { email, otp }).toPromise();
+      return { success: true };
+    } catch (error) {
+      throw new InternalServerErrorException(error instanceof Error ? error.message : 'Unable to send OTP');
     }
   }
 
@@ -246,6 +259,10 @@ export class AuthService {
     } catch {
       return {};
     }
+  }
+
+  private generateOtp(): string {
+    return Math.floor(100000 + Math.random() * 900000).toString();
   }
 }
 
