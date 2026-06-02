@@ -41,7 +41,7 @@ export class OrderController {
   }
 
   @Get(':id')
-  async findOne(@Param('id', ParseUUIDPipe) id: string): Promise<ApiResponse<Order>> {
+  async findOne(@Param('id', ParseUUIDPipe) id: string): Promise<ApiResponse<Order & { userEmail?: string; customerName?: string }>> {
     this.logger.log(`Fetching order ${id}`);
     const order = await this.orderService.findOne(id);
     return ApiResponse.success(order);
@@ -83,8 +83,6 @@ export class OrderController {
     await this.orderService.remove(id);
     return ApiResponse.success({ deleted: true }, 'Order deleted successfully');
   }
-
-  // --- Saga & Async Event Listeners ---
 
   @EventPattern('stock.reserved')
   async handleStockReserved(@Payload() payload: { orderId: string }) {

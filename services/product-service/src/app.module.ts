@@ -7,6 +7,7 @@ import { ProductModule } from './product/product.module';
 import { Product } from './product/entities/product.entity';
 import { Category } from './product/entities/category.entity';
 import { CompatModule } from './compat/compat.module';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { CompatModule } from './compat/compat.module';
     }),
     ProductModule,
     CompatModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [AppService],

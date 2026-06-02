@@ -4,6 +4,8 @@ import { ConfigService } from '@nestjs/config';
 export interface OrderSnapshotResponse {
   id: string;
   userId: string;
+  userEmail?: string;
+  customerName?: string;
   totalAmount: number;
   paymentMethod: string;
   status?: string;
@@ -36,7 +38,7 @@ export class OrderClient {
       throw new BadRequestException(`Unable to fetch order ${orderId}`);
     }
 
-    const body = (await response.json()) as { data?: OrderSnapshotResponse };
+    const body = (await response.json()) as { data?: OrderSnapshotResponse & { userEmail?: string; customerName?: string } };
     if (!body?.data?.id) {
       throw new BadRequestException(`Order ${orderId} payload is invalid`);
     }

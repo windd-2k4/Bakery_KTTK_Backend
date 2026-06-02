@@ -18,6 +18,7 @@ interface UserSummary {
   isActive: boolean;
   role: string;
   email?: string;
+  fullName?: string;
 }
 
 @Injectable()

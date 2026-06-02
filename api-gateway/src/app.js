@@ -109,6 +109,15 @@ app.use('/api/products', createProxyMiddleware({
   onError: onProxyError
 }));
 
+app.use('/api/chat', createProxyMiddleware({ 
+  target: SERVICES.product, 
+  changeOrigin: true,
+  pathRewrite: { '^/': '/chat' },
+  logLevel: 'warn',
+  onProxyReq: onProxyReqWithLog,
+  onError: onProxyError
+}));
+
 // Native product routes
 app.use('/api/categories', createProxyMiddleware({
   target: SERVICES.product,
@@ -128,6 +137,18 @@ app.use('/category-management/api/v1/categories', createProxyMiddleware({
   secure: false,
   xfwd: true,
   logLevel: 'warn',
+  pathRewrite: { '^/': '/category-management/api/v1/categories/' },
+  onProxyReq: onProxyReqWithLog,
+  onError: onProxyError
+}));
+
+app.use('/gmail-management/api/v1/gmail', createProxyMiddleware({
+  target: SERVICES.auth,
+  changeOrigin: true,
+  secure: false,
+  xfwd: true,
+  logLevel: 'warn',
+  pathRewrite: { '^/': '/auth/admin/' },
   onProxyReq: onProxyReqWithLog,
   onError: onProxyError
 }));
@@ -138,6 +159,7 @@ app.use('/pastry-management/api/v1/pastries', createProxyMiddleware({
   secure: false,
   xfwd: true,
   logLevel: 'warn',
+  pathRewrite: { '^/': '/pastry-management/api/v1/pastries/' },
   onProxyReq: onProxyReqWithLog,
   onError: onProxyError
 }));
@@ -148,6 +170,7 @@ app.use('/admin/api/v1/pastries', createProxyMiddleware({
   secure: false,
   xfwd: true,
   logLevel: 'warn',
+  pathRewrite: { '^/': '/admin/api/v1/pastries/' },
   onProxyReq: onProxyReqWithLog,
   onError: onProxyError
 }));
@@ -158,6 +181,7 @@ app.use('/admin/api/v1/categories', createProxyMiddleware({
   secure: false,
   xfwd: true,
   logLevel: 'warn',
+  pathRewrite: { '^/': '/admin/api/v1/categories/' },
   onProxyReq: onProxyReqWithLog,
   onError: onProxyError
 }));

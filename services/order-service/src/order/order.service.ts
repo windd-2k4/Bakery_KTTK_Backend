@@ -65,7 +65,6 @@ export class OrderService {
         );
       }
 
-      // perform atomic save in a DB transaction
       const savedOrder = await this.dataSource.transaction(async (manager) => {
         const orderRepo = manager.getRepository(Order);
         const itemRepo = manager.getRepository(OrderItem);
@@ -99,7 +98,6 @@ export class OrderService {
         const persistedItems = await itemRepo.save(itemsEntities);
         persistedOrder.items = persistedItems;
 
-        // initial status log
         const statusLog = logRepo.create({
           orderId: persistedOrder.id,
           fromStatus: null,
@@ -113,7 +111,6 @@ export class OrderService {
         return persistedOrder;
       });
 
-      // publish after successful commit
       await this.orderPublisher.publishOrderCreated(savedOrder);
       this.logger.log(`Order created successfully: ${savedOrder.id}`);
 
@@ -126,8 +123,6 @@ export class OrderService {
 
   async handleStockReserved(payload: { orderId: string }): Promise<void> {
     this.logger.log(`Stock reserved for order ${payload.orderId}. Proceeding with payment...`);
-    // Status can remain PENDING or change to another status if defined
-    // We could emit another event to notify frontend via WebSocket
   }
 
   async handleStockReservationFailed(payload: { orderId: string, reason?: string }): Promise<void> {
@@ -182,12 +177,18 @@ export class OrderService {
     return this.orderRepository.findOrders(userId);
   }
 
-  async findOne(id: string): Promise<Order> {
+  async findOne(id: string): Promise<Order & { userEmail?: string; customerName?: string }> {
     const order = await this.orderRepository.findOrderById(id);
     if (!order) {
       throw new NotFoundException(`Order with id ${id} not found`);
     }
-    return order;
+
+    const user = await this.catalogAuthClient.getUserSummary(order.userId);
+    return {
+      ...order,
+      userEmail: user.email,
+      customerName: user.fullName,
+    };
   }
 
   async update(id: string, updateOrderDto: UpdateOrderDto): Promise<Order> {
@@ -198,7 +199,7 @@ export class OrderService {
     if (updateOrderDto.note) {
       order.note = updateOrderDto.note;
     }
-    return this.orderRepository.saveOrder(order);
+    return this.orderRepository.saveOrder(order as Order);
   }
  
   async updateStatus(id: string, updateStatusDto: UpdateStatusDto): Promise<Order> {
@@ -235,7 +236,7 @@ export class OrderService {
       }
     }
 
-    const updatedOrder = await this.orderRepository.saveOrder(order);
+    const updatedOrder = await this.orderRepository.saveOrder(order as Order);
     const statusLog = this.orderRepository.createStatusLog({
       orderId: id,
       fromStatus: previousStatus,
@@ -298,7 +299,6 @@ export class OrderService {
   }
 
   private getValidTransitions(currentStatus: OrderStatus): OrderStatus[] {
-    // Build allowed transitions from TRANSITIONS map exported by the enum module
     const allowed: OrderStatus[] = [];
     Object.keys(TRANSITIONS).forEach((to) => {
       const cfg = TRANSITIONS[to as keyof typeof TRANSITIONS];
