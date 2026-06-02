@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
+import * as bcrypt from 'bcryptjs';
 
 @Controller('auth/admin')
 export class AdminUsersController {
@@ -38,11 +39,13 @@ export class AdminUsersController {
 
   @Post('employees')
   async createEmployee(@Body() data: any) {
-    // Override the role to EMPLOYEE and set default password if not provided
+    const plainPassword = data.password || '123456';
+    const hashedPassword = await bcrypt.hash(plainPassword, 12);
+
     const employeeData = {
       ...data,
       role: 'EMPLOYEE',
-      password: data.password || '123456',
+      password: hashedPassword,
     };
     return this.usersService.create(employeeData);
   }
@@ -68,11 +71,13 @@ export class AdminUsersController {
 
   @Post('customers')
   async createCustomer(@Body() data: any) {
-    // Override the role to CUSTOMER and set default password if not provided
+    const plainPassword = data.password || '123456';
+    const hashedPassword = await bcrypt.hash(plainPassword, 12);
+
     const customerData = {
       ...data,
       role: 'CUSTOMER',
-      password: data.password || '123456',
+      password: hashedPassword,
     };
     return this.usersService.create(customerData);
   }
